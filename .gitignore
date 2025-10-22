@@ -60,3 +60,6 @@ fakeroot/home/
 
 # Logs directory
 logs/
+
+# Fake root directory
+fakeroot/
