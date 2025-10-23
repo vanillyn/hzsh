@@ -66,3 +66,4 @@ fakeroot/
 
 # Virtual environment
 venv/
+data/
