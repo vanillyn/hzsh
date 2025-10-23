@@ -58,13 +58,15 @@ class Shell(commands.Cog):
         
         return user_home
     
-    async def execute_command(self, username: str, discord_id: str, command: str):
+    async def execute_command(self, username: str, discord_id: str, command: str, ctx=None):
         self.ensure_user_home(username, discord_id)
         
         unix_uid = self.get_unix_uid(discord_id)
         working_dir = self.working_dirs.get(discord_id, f"/home/{username}")
         
         full_command = f"cd {working_dir} && {command}"
+        
+        exit_code = None
         
         try:
             process = await asyncio.create_subprocess_exec(
@@ -79,6 +81,8 @@ class Shell(commands.Cog):
                 timeout=30.0
             )
             
+            exit_code = process.returncode
+            
             output = stdout.decode('utf-8', errors='replace')
             error = stderr.decode('utf-8', errors='replace')
             
@@ -87,6 +91,13 @@ class Shell(commands.Cog):
                 result += output
             if error:
                 result += error
+            
+            if ctx:
+                achievements_cog = self.bot.get_cog("Achievements")
+                if achievements_cog:
+                    await achievements_cog.check_command_achievement(
+                        discord_id, command, exit_code, ctx.guild, ctx.channel
+                    )
             
             return result if result else f"hzsh: {command}: zero code with no output"
             

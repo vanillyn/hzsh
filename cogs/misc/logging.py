@@ -82,27 +82,27 @@ class Logging(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        self.logger.info('hazel / shell ver 0.1-pre connected.')
+        self.logger.info('hazel / shell ver 0.3-alpha connected.')
         
         await self.bot.change_presence(
-            activity=discord.Game(name="in the shell."),
+            activity=discord.Game(name="in Arch Linux"),
             status=discord.Status.online
         )
     
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        self.logger.error(f'Hey boss someone messed up, {ctx.command}: {str(error)}', exc_info=error)
+        self.logger.error(f'error in command {ctx.command}: {str(error)}', exc_info=error)
         
         if isinstance(error, commands.CommandNotFound):
             return
         elif isinstance(error, commands.MissingPermissions):
-            await ctx.send('Hey! Don\'t do that! I didn\'t give you permission!')
+            await ctx.send('you lack the required permissions...')
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f'H-hey.. you forgot {error.param.name}...')
+            await ctx.send(f'i need a {error.param.name}...')
         elif isinstance(error, commands.BadArgument):
-            await ctx.send('I don\'t know what to do with this...!')
+            await ctx.send('what do i do with this...')
         else:
-            await ctx.send('I\'m sorry...')
+            await ctx.send('something went wrong... @vanillyn')
             self.logger.exception(f'unhandled error in {ctx.command}')
     
     @commands.Cog.listener()

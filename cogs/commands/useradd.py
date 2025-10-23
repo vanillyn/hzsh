@@ -18,7 +18,7 @@ class UserAdd(commands.Cog):
             return
         
         await member.add_roles(shell_role)
-        await ctx.send(f"connected to `hazel / shell`. .  .   . !\n`★` [LVL] {ctx.author.user} is now level 1!")
+        await ctx.send(f"connected to `hazel / shell`. .  .   . !\n-# and...\n`★` [LVL] {ctx.author.name} is now level 1!")
 
 async def setup(bot):
     await bot.add_cog(UserAdd(bot))

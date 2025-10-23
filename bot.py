@@ -36,6 +36,7 @@ async def load_cogs():
                 
                 try:
                     await bot.load_extension(module)
+                    # print(f'{module} is connected.')
                 except Exception as e:
                     print(f'failed to load {module}: {e}')
 
