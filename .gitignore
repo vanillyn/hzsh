@@ -63,3 +63,6 @@ logs/
 
 # Fake root directory
 fakeroot/
+
+# Virtual environment
+venv/
