@@ -1,0 +1,12 @@
+services:
+  linux:
+    build: .
+    container_name: hzsh_linux
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./root/home:/home
+    mem_limit: 512m
+    cpus: 0.5
+    restart: unless-stopped
+    command: tail -f /dev/null

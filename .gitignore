@@ -49,8 +49,8 @@ coverage.xml
 # Sphinx documentation
 docs/_build/
 
-# Fakeroot home
-fakeroot/home/
+# Container mount
+root/
 
 # Environment variables file
 .env
