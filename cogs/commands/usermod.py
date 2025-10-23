@@ -6,14 +6,23 @@ import re
 class UserMod(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+    
+    async def get_or_create_colors_marker(self, guild):
+        marker = discord.utils.get(guild.roles, name="colors:")
+        if not marker:
+            marker = await guild.create_role(
+                name="colors:",
+                reason="marker role for custom colors"
+            )
+        return marker
+    
     async def get_user_color_role(self, member):
         for role in member.roles:
             if role.name.startswith(f"# {member.name} / "):
                 return role
         return None
     
-    @commands.command()
+    @commands.command(name="usermod", aliases=["um", "hazelprofile", "hzpf", "chfn"])
     async def usermod(self, ctx, category: str = ' ', *, value: str = ' '):
         if not category or not value:
             categories = ", ".join(config.USERMOD_CATEGORIES.keys())
@@ -51,7 +60,8 @@ class UserMod(commands.Cog):
                 await member.remove_roles(old_role)
                 await old_role.delete(reason="replacing with new color")
             
-            marker = ctx.guild.get_role("colors:")
+            marker = await self.get_or_create_colors_marker(guild)
+            marker_pos = marker.position
             
             new_role = await guild.create_role(
                 name=f"# {member.name} / {hex_code}",
@@ -59,7 +69,10 @@ class UserMod(commands.Cog):
                 reason=f"custom color for {member.name}"
             )
             
-            await new_role.edit(position=marker.position + 1)
+            try:
+                await new_role.edit(position=marker_pos - 1)
+            except discord.HTTPException:
+                pass
             
             await member.add_roles(new_role)
             await ctx.send(f"set your color to #{hex_code}")

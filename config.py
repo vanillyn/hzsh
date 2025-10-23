@@ -56,6 +56,8 @@ USERMOD_MAPPINGS = {
         "windowsnt": "\\ windows (pre-nt)",
         "prent": "\\ windows (pre-nt)",
         "oldwindows": "\\ windows (pre-nt)",
+        "win95": "\\ windows (pre-nt)",
+        "win98": "\\ windows (pre-nt)",
         
         "macos": "\\ macos",
         "mac": "\\ macos",
@@ -132,7 +134,8 @@ USERMOD_MAPPINGS = {
     },
     
     "channel": {
-        "controversial": "+ controversial"
+        "controversial": "+ controversial",
+        "politics": "+ controversial",
     }
 }
 

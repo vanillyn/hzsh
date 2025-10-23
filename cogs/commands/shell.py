@@ -92,6 +92,15 @@ class Shell(commands.Cog):
             if error:
                 result += error
             
+            logging_cog = self.bot.get_cog("EnhancedLogging")
+            if logging_cog and ctx:
+                log_msg = "shell command\n"
+                log_msg += f"user: {username} ({discord_id})\n"
+                log_msg += f"command: {command}\n"
+                log_msg += f"exit code: {exit_code}\n"
+                log_msg += f"working dir: {working_dir}"
+                await logging_cog.log_to_channel(log_msg, "SHELL")
+            
             if ctx:
                 achievements_cog = self.bot.get_cog("Achievements")
                 if achievements_cog:
@@ -116,7 +125,7 @@ class Shell(commands.Cog):
         discord_id = str(ctx.author.id)
         
         async with ctx.typing():
-            result = await self.execute_command(username, discord_id, command)
+            result = await self.execute_command(username, discord_id, command, ctx)
         
         if len(result) > 1900:
             result = result[:1900] + "\n... output truncated"
@@ -142,7 +151,7 @@ class Shell(commands.Cog):
         else:
             new_path = f"{current}/{path}"
         
-        result = await self.execute_command(username, discord_id, f"cd '{new_path}' && pwd")
+        result = await self.execute_command(username, discord_id, f"cd '{new_path}' && pwd", ctx)
         
         if "no such file or directory" not in result.lower() and "not a directory" not in result.lower():
             self.working_dirs[discord_id] = result.strip()
@@ -167,6 +176,13 @@ class Shell(commands.Cog):
         
         unix_uid = self.get_unix_uid(discord_id)
         working_dir = self.working_dirs.get(discord_id, f"/home/{username}")
+        
+        logging_cog = self.bot.get_cog("EnhancedLogging")
+        if logging_cog:
+            log_msg = "interactive shell started\n"
+            log_msg += f"user: {username} ({discord_id})\n"
+            log_msg += f"working dir: {working_dir}"
+            await logging_cog.log_to_channel(log_msg, "SHELL")
         
         process = await asyncio.create_subprocess_exec(
             "docker", "exec", "-i", "-u", str(unix_uid), "-w", working_dir,
@@ -332,6 +348,12 @@ class Shell(commands.Cog):
             except Exception as e:
                 print(e)
                 process.kill()
+            
+            logging_cog = self.bot.get_cog("EnhancedLogging")
+            if logging_cog:
+                log_msg = "interactive shell closed\n"
+                log_msg += f"user: {session['username']} ({discord_id})"
+                await logging_cog.log_to_channel(log_msg, "SHELL")
             
             if discord_id in self.sessions:
                 del self.sessions[discord_id]
