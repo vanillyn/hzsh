@@ -282,10 +282,17 @@ class Shell(commands.Cog):
         username = ctx.author.name
         discord_id = str(ctx.author.id)
         
+        achievements_cog = self.bot.get_cog("Achievements")
+        if achievements_cog and discord_id not in self.sessions:
+            if not achievements_cog.has_achievement(discord_id, "thestart"):
+                await achievements_cog.grant_achievement(
+                    discord_id, "thestart", ctx.guild, ctx.channel
+                )
+        
         if discord_id in self.sessions:
             await ctx.send("youre already connected")
             return
-        
+
         self.ensure_user_home(username, discord_id)
         
         unix_uid = self.get_unix_uid(discord_id)
