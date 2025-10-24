@@ -5,6 +5,129 @@ import asyncio
 from pathlib import Path
 import config
 import hashlib
+import re
+
+class Terminal:
+    def __init__(self, width=80, height=24):
+        self.width = width
+        self.height = height
+        self.buffer = [[(' ', '') for _ in range(width)] for _ in range(height)]
+        self.cursor_x = 0
+        self.cursor_y = 0
+        self.saved_cursor = (0, 0)
+        self.current_style = ''
+        
+    def clear(self):
+        self.buffer = [[(' ', '') for _ in range(self.width)] for _ in range(self.height)]
+        self.cursor_x = 0
+        self.cursor_y = 0
+    
+    def clear_line(self, mode=0):
+        if mode == 0:
+            for x in range(self.cursor_x, self.width):
+                self.buffer[self.cursor_y][x] = (' ', '')
+        elif mode == 1:
+            for x in range(0, self.cursor_x + 1):
+                self.buffer[self.cursor_y][x] = (' ', '')
+        elif mode == 2:
+            self.buffer[self.cursor_y] = [(' ', '') for _ in range(self.width)]
+    
+    def clear_screen(self, mode=0):
+        if mode == 0:
+            for x in range(self.cursor_x, self.width):
+                self.buffer[self.cursor_y][x] = (' ', '')
+            for y in range(self.cursor_y + 1, self.height):
+                self.buffer[y] = [(' ', '') for _ in range(self.width)]
+        elif mode == 1:
+            for x in range(0, self.cursor_x + 1):
+                self.buffer[self.cursor_y][x] = (' ', '')
+            for y in range(0, self.cursor_y):
+                self.buffer[y] = [(' ', '') for _ in range(self.width)]
+        elif mode == 2:
+            self.buffer = [[(' ', '') for _ in range(self.width)] for _ in range(self.height)]
+    
+    def write_char(self, char):
+        if self.cursor_y >= self.height:
+            self.scroll_up()
+            self.cursor_y = self.height - 1
+        
+        if self.cursor_x >= self.width:
+            self.cursor_x = 0
+            self.cursor_y += 1
+            if self.cursor_y >= self.height:
+                self.scroll_up()
+                self.cursor_y = self.height - 1
+        
+        if self.cursor_y < self.height and self.cursor_x < self.width:
+            self.buffer[self.cursor_y][self.cursor_x] = (char, self.current_style)
+            self.cursor_x += 1
+    
+    def newline(self):
+        self.cursor_x = 0
+        self.cursor_y += 1
+        if self.cursor_y >= self.height:
+            self.scroll_up()
+            self.cursor_y = self.height - 1
+    
+    def carriage_return(self):
+        self.cursor_x = 0
+    
+    def backspace(self):
+        if self.cursor_x > 0:
+            self.cursor_x -= 1
+    
+    def move_cursor(self, x=None, y=None):
+        if x is not None:
+            self.cursor_x = max(0, min(x, self.width - 1))
+        if y is not None:
+            self.cursor_y = max(0, min(y, self.height - 1))
+    
+    def scroll_up(self, lines=1):
+        for _ in range(lines):
+            self.buffer.pop(0)
+            self.buffer.append([(' ', '') for _ in range(self.width)])
+    
+    def scroll_down(self, lines=1):
+        for _ in range(lines):
+            self.buffer.pop()
+            self.buffer.insert(0, [(' ', '') for _ in range(self.width)])
+    
+    def get_display(self, show_cursor=True):
+        lines = []
+        for y in range(self.height):
+            line_parts = []
+            current_ansi = ''
+            
+            for x in range(self.width):
+                char, style = self.buffer[y][x]
+                
+                if show_cursor and y == self.cursor_y and x == self.cursor_x:
+                    if current_ansi:
+                        line_parts.append(current_ansi)
+                        current_ansi = ''
+                    line_parts.append('\x1b[7m')
+                    line_parts.append(char if char != ' ' else ' ')
+                    line_parts.append('\x1b[27m')
+                    if style:
+                        current_ansi = style
+                else:
+                    if style != current_ansi:
+                        if current_ansi:
+                            line_parts.append(current_ansi)
+                        current_ansi = style
+                    line_parts.append(char)
+            
+            if current_ansi:
+                line_parts.append('\x1b[0m')
+            
+            line = ''.join(line_parts)
+            
+            if not line or line.replace('\x1b[0m', '').replace('\x1b[7m', '').replace('\x1b[27m', '').isspace():
+                lines.append(' ')
+            else:
+                lines.append(line)
+        
+        return lines
 
 class Shell(commands.Cog):
     def __init__(self, bot):
@@ -92,15 +215,6 @@ class Shell(commands.Cog):
             if error:
                 result += error
             
-            logging_cog = self.bot.get_cog("EnhancedLogging")
-            if logging_cog and ctx:
-                log_msg = "shell command\n"
-                log_msg += f"user: {username} ({discord_id})\n"
-                log_msg += f"command: {command}\n"
-                log_msg += f"exit code: {exit_code}\n"
-                log_msg += f"working dir: {working_dir}"
-                await logging_cog.log_to_channel(log_msg, "SHELL")
-            
             if ctx:
                 achievements_cog = self.bot.get_cog("Achievements")
                 if achievements_cog:
@@ -151,7 +265,7 @@ class Shell(commands.Cog):
         else:
             new_path = f"{current}/{path}"
         
-        result = await self.execute_command(username, discord_id, f"cd '{new_path}' && pwd", ctx)
+        result = await self.execute_command(username, discord_id, f"cd '{new_path}' && pwd")
         
         if "no such file or directory" not in result.lower() and "not a directory" not in result.lower():
             self.working_dirs[discord_id] = result.strip()
@@ -169,7 +283,7 @@ class Shell(commands.Cog):
         discord_id = str(ctx.author.id)
         
         if discord_id in self.sessions:
-            await ctx.send("you're already connected")
+            await ctx.send("youre already connected")
             return
         
         self.ensure_user_home(username, discord_id)
@@ -177,24 +291,19 @@ class Shell(commands.Cog):
         unix_uid = self.get_unix_uid(discord_id)
         working_dir = self.working_dirs.get(discord_id, f"/home/{username}")
         
-        logging_cog = self.bot.get_cog("EnhancedLogging")
-        if logging_cog:
-            log_msg = "interactive shell started\n"
-            log_msg += f"user: {username} ({discord_id})\n"
-            log_msg += f"working dir: {working_dir}"
-            await logging_cog.log_to_channel(log_msg, "SHELL")
-        
         process = await asyncio.create_subprocess_exec(
             "docker", "exec", "-i", "-u", str(unix_uid), "-w", working_dir,
-            self.container_name, "script", "-qfc", "bash", "/dev/null",
+            self.container_name, 
+            "env", "TERM=xterm", "COLUMNS=80", "LINES=24",
+            "script", "-qfc", "bash", "/dev/null",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT
         )
         
-        screen_lines = ["" for _ in range(17)]
+        screen = Terminal(width=80, height=24)
         
-        screen_content = "```\n" + "\n".join(line.ljust(57) for line in screen_lines) + "\n```"
+        screen_content = "```ansi\n" + "\n".join(screen.get_display(show_cursor=False)) + "\n```"
         screen_msg = await ctx.send(screen_content)
         
         self.sessions[discord_id] = {
@@ -203,9 +312,9 @@ class Shell(commands.Cog):
             "username": username,
             "process": process,
             "screen_msg": screen_msg,
-            "screen_lines": screen_lines,
-            "current_line": "",
-            "cursor_col": 0
+            "screen": screen,
+            "last_update": 0,
+            "buffer": "",
         }
         
         asyncio.create_task(self._read_process_output(discord_id))
@@ -216,12 +325,13 @@ class Shell(commands.Cog):
         
         session = self.sessions[discord_id]
         process = session["process"]
+        screen = session["screen"]
         
         try:
             while session["active"]:
                 try:
                     chunk = await asyncio.wait_for(
-                        process.stdout.read(256),
+                        process.stdout.read(4096),
                         timeout=0.05
                     )
                     
@@ -229,7 +339,12 @@ class Shell(commands.Cog):
                         break
                     
                     text = chunk.decode('utf-8', errors='replace')
-                    await self._process_output(discord_id, text)
+                    self._process_terminal_output(screen, text)
+                    
+                    current_time = asyncio.get_event_loop().time()
+                    if current_time - session["last_update"] > 0.1:
+                        await self._update_screen(discord_id)
+                        session["last_update"] = current_time
                     
                 except asyncio.TimeoutError:
                     continue
@@ -239,86 +354,174 @@ class Shell(commands.Cog):
             if discord_id in self.sessions:
                 self.sessions[discord_id]["active"] = False
     
-    async def _process_output(self, discord_id, text):
-        if discord_id not in self.sessions:
-            return
-        
-        session = self.sessions[discord_id]
-        screen_lines = session["screen_lines"]
-        current_line = session["current_line"]
-        cursor_col = session["cursor_col"]
-        
+    def _process_terminal_output(self, screen, text):
         i = 0
         while i < len(text):
             char = text[i]
             
             if char == '\r':
-                cursor_col = 0
+                screen.carriage_return()
             elif char == '\n':
-                screen_lines.append(current_line)
-                if len(screen_lines) > 17:
-                    screen_lines.pop(0)
-                current_line = ""
-                cursor_col = 0
+                screen.newline()
             elif char == '\b':
-                if cursor_col > 0:
-                    cursor_col -= 1
-                    current_line = current_line[:cursor_col] + current_line[cursor_col+1:]
+                screen.backspace()
             elif char == '\x1b':
-                if i + 1 < len(text) and text[i + 1] == '[':
-                    seq_end = i + 2
-                    while seq_end < len(text) and text[seq_end] not in 'ABCDEFGHJKSTfmhlsu':
-                        seq_end += 1
-                    if seq_end < len(text):
-                        seq = text[i+2:seq_end+1]
-                        if seq.endswith('K'):
-                            if seq == 'K' or seq == '0K':
-                                current_line = current_line[:cursor_col]
-                            elif seq == '1K':
-                                current_line = ' ' * cursor_col + current_line[cursor_col:]
-                            elif seq == '2K':
-                                current_line = ""
-                                cursor_col = 0
-                        elif seq.endswith('D'):
-                            n = int(seq[:-1]) if seq[:-1] else 1
-                            cursor_col = max(0, cursor_col - n)
-                        elif seq.endswith('C'):
-                            n = int(seq[:-1]) if seq[:-1] else 1
-                            cursor_col = min(len(current_line), cursor_col + n)
-                        i = seq_end
-                    else:
-                        i += 1
+                seq_len = self._handle_escape_sequence(screen, text[i:])
+                i += seq_len - 1
+            elif char == '\x07':
+                pass
+            elif ord(char) >= 32 or char == '\t':
+                if char == '\t':
+                    spaces = 8 - (screen.cursor_x % 8)
+                    for _ in range(spaces):
+                        screen.write_char(' ')
                 else:
-                    i += 1
-            elif ord(char) >= 32:
-                if cursor_col >= len(current_line):
-                    current_line += char
-                else:
-                    current_line = current_line[:cursor_col] + char + current_line[cursor_col+1:]
-                cursor_col += 1
+                    screen.write_char(char)
             
             i += 1
+    
+    def _handle_escape_sequence(self, screen, text):
+        if len(text) < 2:
+            return 1
         
-        session["current_line"] = current_line
-        session["cursor_col"] = cursor_col
+        if text[1] == '[':
+            match = re.match(r'\x1b\[([0-9;?]*)([a-zA-Z@])', text)
+            if match:
+                params_str = match.group(1).replace('?', '')
+                command = match.group(2)
+                params = []
+                if params_str:
+                    params = [int(p) if p else 0 for p in params_str.split(';')]
+                
+                if command == 'A':
+                    n = params[0] if params else 1
+                    screen.move_cursor(y=max(0, screen.cursor_y - n))
+                elif command == 'B':
+                    n = params[0] if params else 1
+                    screen.move_cursor(y=min(screen.height - 1, screen.cursor_y + n))
+                elif command == 'C':
+                    n = params[0] if params else 1
+                    screen.move_cursor(x=min(screen.width - 1, screen.cursor_x + n))
+                elif command == 'D':
+                    n = params[0] if params else 1
+                    screen.move_cursor(x=max(0, screen.cursor_x - n))
+                elif command == 'H' or command == 'f':
+                    row = (params[0] - 1) if params and params[0] > 0 else 0
+                    col = (params[1] - 1) if len(params) > 1 and params[1] > 0 else 0
+                    screen.move_cursor(x=col, y=row)
+                elif command == 'J':
+                    mode = params[0] if params else 0
+                    screen.clear_screen(mode)
+                elif command == 'K':
+                    mode = params[0] if params else 0
+                    screen.clear_line(mode)
+                elif command == 'S':
+                    n = params[0] if params else 1
+                    screen.scroll_up(n)
+                elif command == 'T':
+                    n = params[0] if params else 1
+                    screen.scroll_down(n)
+                elif command == 'r':
+                    pass
+                elif command == 'm':
+                    if not params:
+                        params = [0]
+                    
+                    ansi_parts = []
+                    for param in params:
+                        if param == 0:
+                            screen.current_style = ''
+                        elif param == 1:
+                            ansi_parts.append('1')
+                        elif param == 2:
+                            ansi_parts.append('2')
+                        elif param == 3:
+                            ansi_parts.append('3')
+                        elif param == 4:
+                            ansi_parts.append('4')
+                        elif param == 5:
+                            ansi_parts.append('5')
+                        elif param == 7:
+                            ansi_parts.append('7')
+                        elif 30 <= param <= 37:
+                            ansi_parts.append(str(param))
+                        elif param == 38:
+                            idx = params.index(param)
+                            if idx + 2 < len(params) and params[idx + 1] == 5:
+                                ansi_parts.append(f'38;5;{params[idx + 2]}')
+                            elif idx + 4 < len(params) and params[idx + 1] == 2:
+                                ansi_parts.append(f'38;2;{params[idx + 2]};{params[idx + 3]};{params[idx + 4]}')
+                        elif param == 39:
+                            ansi_parts.append('39')
+                        elif 40 <= param <= 47:
+                            ansi_parts.append(str(param))
+                        elif param == 48:
+                            idx = params.index(param)
+                            if idx + 2 < len(params) and params[idx + 1] == 5:
+                                ansi_parts.append(f'48;5;{params[idx + 2]}')
+                            elif idx + 4 < len(params) and params[idx + 1] == 2:
+                                ansi_parts.append(f'48;2;{params[idx + 2]};{params[idx + 3]};{params[idx + 4]}')
+                        elif param == 49:
+                            ansi_parts.append('49')
+                        elif 90 <= param <= 97:
+                            ansi_parts.append(str(param))
+                        elif 100 <= param <= 107:
+                            ansi_parts.append(str(param))
+                    
+                    if ansi_parts:
+                        screen.current_style = f'\x1b[{";".join(ansi_parts)}m'
+                    else:
+                        screen.current_style = ''
+                elif command == 's':
+                    screen.saved_cursor = (screen.cursor_x, screen.cursor_y)
+                elif command == 'u':
+                    screen.cursor_x, screen.cursor_y = screen.saved_cursor
+                elif command == 'l' or command == 'h':
+                    pass
+                
+                return len(match.group(0))
         
-        display_lines = screen_lines.copy()
-        if current_line or cursor_col > 0:
-            display_line = current_line[:57]
-            if cursor_col < 57:
-                display_line = display_line[:cursor_col] + '█' + display_line[cursor_col+1:]
-            display_lines.append(display_line)
+        elif text[1] == ']':
+            match = re.match(r'\x1b\][^\x07\x1b]*(\x07|\x1b\\)', text)
+            if match:
+                return len(match.group(0))
+            end = text.find('\x07', 2)
+            if end != -1:
+                return end + 1
+            end = text.find('\x1b\\', 2)
+            if end != -1:
+                return end + 2
         
-        if len(display_lines) > 17:
-            display_lines = display_lines[-17:]
+        elif text[1] in '>=':
+            return 2
+        elif text[1] == '(':
+            if len(text) > 2:
+                return 3
+            return 2
+        elif text[1] == ')':
+            if len(text) > 2:
+                return 3
+            return 2
         
-        screen_content = "```\n" + "\n".join(line.ljust(57)[:57] for line in display_lines) + "\n```"
+        return 2
+    
+    async def _update_screen(self, discord_id):
+        if discord_id not in self.sessions:
+            return
+        
+        session = self.sessions[discord_id]
+        screen = session["screen"]
+        
+        lines = screen.get_display(show_cursor=True)
+        
+        screen_content = "```ansi\n" + "\n".join(lines) + "\n```"
         
         try:
             await session["screen_msg"].edit(content=screen_content)
+        except discord.errors.NotFound:
+            session["active"] = False
         except Exception as e:
-            print(e)
-            pass
+            print(f"error updating screen: {e}")
     
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -345,15 +548,8 @@ class Shell(commands.Cog):
             process.terminate()
             try:
                 await asyncio.wait_for(process.wait(), timeout=2.0)
-            except Exception as e:
-                print(e)
+            except Exception:
                 process.kill()
-            
-            logging_cog = self.bot.get_cog("EnhancedLogging")
-            if logging_cog:
-                log_msg = "interactive shell closed\n"
-                log_msg += f"user: {session['username']} ({discord_id})"
-                await logging_cog.log_to_channel(log_msg, "SHELL")
             
             if discord_id in self.sessions:
                 del self.sessions[discord_id]
@@ -361,26 +557,39 @@ class Shell(commands.Cog):
             await message.channel.send("shell session closed")
             try:
                 await message.delete()
-            except Exception as e:
-                print (e)
+            except Exception:
                 pass
             return
         
         try:
             await message.delete()
-        except Exception as e:
-            print(e)
+        except Exception:
             pass
         
         process = session["process"]
         
-        translated = content.replace('[^] C', '\x03')
-        translated = translated.replace('[^] D', '\x04')
-        translated = translated.replace('[^] Z', '\x1a')
+        translated = content
+        
+        translated = translated.replace('[<]', '\b')
+        if '[<' in translated and ']' in translated:
+            pattern = r'\[<(\d+)\]'
+            def replace_backspace(match):
+                count = int(match.group(1))
+                return '\b' * count
+            translated = re.sub(pattern, replace_backspace, translated)
+        
+        translated = translated.replace('[^C]', '\x03')
+        translated = translated.replace('[^D]', '\x04')
+        translated = translated.replace('[^Z]', '\x1a')
+        translated = translated.replace('[^L]', '\x0c')
         translated = translated.replace('[UP]', '\x1b[A')
         translated = translated.replace('[DOWN]', '\x1b[B')
         translated = translated.replace('[RIGHT]', '\x1b[C')
         translated = translated.replace('[LEFT]', '\x1b[D')
+        translated = translated.replace('[HOME]', '\x1b[H')
+        translated = translated.replace('[END]', '\x1b[F')
+        translated = translated.replace('[PGUP]', '\x1b[5~')
+        translated = translated.replace('[PGDN]', '\x1b[6~')
         translated = translated.replace('[]', '\n')
         
         if '[^]' in translated:
