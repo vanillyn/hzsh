@@ -8,19 +8,24 @@ import hashlib
 import re
 
 class Terminal:
-    def __init__(self, width=80, height=24):
+    def __init__(self, width=80, height=24, scrollback=1000):
         self.width = width
         self.height = height
+        self.scrollback_limit = scrollback
         self.buffer = [[(' ', '') for _ in range(width)] for _ in range(height)]
+        self.scrollback = []
         self.cursor_x = 0
         self.cursor_y = 0
         self.saved_cursor = (0, 0)
         self.current_style = ''
+        self.scroll_offset = 0
         
     def clear(self):
         self.buffer = [[(' ', '') for _ in range(self.width)] for _ in range(self.height)]
+        self.scrollback = []
         self.cursor_x = 0
         self.cursor_y = 0
+        self.scroll_offset = 0
     
     def clear_line(self, mode=0):
         if mode == 0:
@@ -84,6 +89,9 @@ class Terminal:
     
     def scroll_up(self, lines=1):
         for _ in range(lines):
+            self.scrollback.append(self.buffer[0])
+            if len(self.scrollback) > self.scrollback_limit:
+                self.scrollback.pop(0)
             self.buffer.pop(0)
             self.buffer.append([(' ', '') for _ in range(self.width)])
     
@@ -92,16 +100,44 @@ class Terminal:
             self.buffer.pop()
             self.buffer.insert(0, [(' ', '') for _ in range(self.width)])
     
+    def scroll_view_up(self, lines=1):
+        max_offset = len(self.scrollback)
+        self.scroll_offset = min(self.scroll_offset + lines, max_offset)
+    
+    def scroll_view_down(self, lines=1):
+        self.scroll_offset = max(self.scroll_offset - lines, 0)
+    
     def get_display(self, show_cursor=True):
+        if self.scroll_offset > 0:
+            offset = self.scroll_offset
+            visible_lines = []
+            
+            if offset <= len(self.scrollback):
+                start_idx = len(self.scrollback) - offset
+                visible_lines = self.scrollback[start_idx:start_idx + self.height]
+                
+                remaining = self.height - len(visible_lines)
+                if remaining > 0:
+                    visible_lines.extend(self.buffer[:remaining])
+            else:
+                visible_lines = self.buffer
+        else:
+            visible_lines = self.buffer
+        
         lines = []
-        for y in range(self.height):
+        for y, line_buffer in enumerate(visible_lines):
             line_parts = []
             current_ansi = ''
             
             for x in range(self.width):
-                char, style = self.buffer[y][x]
+                if x >= len(line_buffer):
+                    break
+                    
+                char, style = line_buffer[x]
                 
-                if show_cursor and y == self.cursor_y and x == self.cursor_x:
+                show_cursor_here = show_cursor and self.scroll_offset == 0 and y == self.cursor_y and x == self.cursor_x
+                
+                if show_cursor_here:
                     if current_ansi:
                         line_parts.append(current_ansi)
                         current_ansi = ''
@@ -282,17 +318,10 @@ class Shell(commands.Cog):
         username = ctx.author.name
         discord_id = str(ctx.author.id)
         
-        achievements_cog = self.bot.get_cog("Achievements")
-        if achievements_cog and discord_id not in self.sessions:
-            if not achievements_cog.has_achievement(discord_id, "thestart"):
-                await achievements_cog.grant_achievement(
-                    discord_id, "thestart", ctx.guild, ctx.channel
-                )
-        
         if discord_id in self.sessions:
             await ctx.send("youre already connected")
             return
-
+        
         self.ensure_user_home(username, discord_id)
         
         unix_uid = self.get_unix_uid(discord_id)
@@ -308,7 +337,7 @@ class Shell(commands.Cog):
             stderr=asyncio.subprocess.STDOUT
         )
         
-        screen = Terminal(width=80, height=24)
+        screen = Terminal(width=80, height=24, scrollback=1000)
         
         screen_content = "```ansi\n" + "\n".join(screen.get_display(show_cursor=False)) + "\n```"
         screen_msg = await ctx.send(screen_content)
@@ -523,6 +552,24 @@ class Shell(commands.Cog):
         
         screen_content = "```ansi\n" + "\n".join(lines) + "\n```"
         
+        if len(screen_content) > 1990:
+            lines = screen.get_display(show_cursor=False)
+            screen_content = "```ansi\n" + "\n".join(lines) + "\n```"
+            
+            if len(screen_content) > 1990:
+                truncated_lines = []
+                current_length = 12
+                
+                for line in lines:
+                    line_length = len(line) + 1
+                    if current_length + line_length > 1980:
+                        break
+                    truncated_lines.append(line)
+                    current_length += line_length
+                
+                truncated_lines.append("... output truncated, use [PGUP]/[PGDN] to scroll")
+                screen_content = "```ansi\n" + "\n".join(truncated_lines) + "\n```"
+        
         try:
             await session["screen_msg"].edit(content=screen_content)
         except discord.errors.NotFound:
@@ -562,6 +609,26 @@ class Shell(commands.Cog):
                 del self.sessions[discord_id]
             
             await message.channel.send("shell session closed")
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        screen = session["screen"]
+        
+        if content == '[PGUP]':
+            screen.scroll_view_up(12)
+            await self._update_screen(discord_id)
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+        
+        if content == '[PGDN]':
+            screen.scroll_view_down(12)
+            await self._update_screen(discord_id)
             try:
                 await message.delete()
             except Exception:
