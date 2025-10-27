@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 import asyncio
 import random
+import logging
 
 load_dotenv()
 
@@ -33,14 +34,11 @@ STATUS_LIST = [
 @tasks.loop(minutes=10)
 async def rotate_status():
     status = random.choice(STATUS_LIST)
-    
     activity_type = {
         "playing": discord.ActivityType.playing,
         "listening": discord.ActivityType.listening,
         "watching": discord.ActivityType.watching,
     }.get(status["type"], discord.ActivityType.playing)
-    
-    print(f'\033[90m[{discord.utils.utcnow().strftime("%Y-%m-%d %H:%M:%S")}] [STATUS] {status["type"]} {status["name"]}\033[0m')
     
     activity = discord.Activity(type=activity_type, name=status["name"])
     await bot.change_presence(activity=activity, status=discord.Status.idle)
@@ -50,13 +48,10 @@ async def before_rotate_status():
     await bot.wait_until_ready()
 
 async def load_cogs():
-    import os
     from pathlib import Path
     
     cogs_dir = Path('cogs')
-    
     if not cogs_dir.exists():
-        print('cogs directory not found')
         return
     
     for root, dirs, files in os.walk(cogs_dir):
@@ -64,11 +59,10 @@ async def load_cogs():
             if file.endswith('.py') and not file.startswith('_'):
                 path = Path(root) / file[:-3]
                 module = str(path).replace(os.sep, '.')
-                
                 try:
                     await bot.load_extension(module)
                 except Exception as e:
-                    print(f'failed to load {module}: {e}')
+                    logging.error(f'failed to load {module}: {e}')
 
 async def main():
     async with bot:
@@ -76,12 +70,10 @@ async def main():
         rotate_status.start()
         
         token = os.getenv('DISCORD_TOKEN')
-        
         if not token:
-            print('DISCORD_TOKEN not found in environment variables')
+            logging.error('DISCORD_TOKEN not found')
             exit(1)
         
-        print('[XXXX-XX-XX XX:XX:XX] [HZSH] connecting...  ..   .     .          .                    .')
         await bot.start(token)
 
 if __name__ == '__main__':

@@ -3,7 +3,6 @@ from discord.ext import commands
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-import platform
 import subprocess
 import sys
 
@@ -11,7 +10,7 @@ class Logger(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = self.setup_logging()
-        self.bot_log_channel = 1430975054518288504
+        self.bot_log = 1430975054518288504
         
     def setup_logging(self):
         if not os.path.exists('logs'):
@@ -19,12 +18,11 @@ class Logger(commands.Cog):
         
         logger = logging.getLogger('discord_bot')
         logger.setLevel(logging.DEBUG)
-        
         logger.handlers.clear()
         
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.DEBUG)
-        console_handler.setFormatter(self.formatter_colors('[%(asctime)s] [%(levelname)s] %(message)s'))
+        console = logging.StreamHandler()
+        console.setLevel(logging.DEBUG)
+        console.setFormatter(self.colored_formatter())
         
         file_handler = RotatingFileHandler(
             'logs/bot.log',
@@ -48,7 +46,7 @@ class Logger(commands.Cog):
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(file_format)
         
-        logger.addHandler(console_handler)
+        logger.addHandler(console)
         logger.addHandler(file_handler)
         logger.addHandler(error_handler)
 
@@ -60,7 +58,7 @@ class Logger(commands.Cog):
         
         return logger
     
-    def formatter_colors(self, fmt):
+    def colored_formatter(self):
         class ColoredFormatter(logging.Formatter):
             grey = '\x1b[38;21m'
             blue = '\x1b[38;5;39m'
@@ -69,26 +67,27 @@ class Logger(commands.Cog):
             bold_red = '\x1b[31;1m'
             reset = '\x1b[0m'
             
-            def __init__(self, fmt):
+            def __init__(self):
                 super().__init__()
-                self.fmt = fmt
-                self.FORMATS = {
-                    logging.DEBUG: self.grey + self.fmt + self.reset,
-                    logging.INFO: self.blue + self.fmt + self.reset,
-                    logging.WARNING: self.yellow + self.fmt + self.reset,
-                    logging.ERROR: self.red + self.fmt + self.reset,
-                    logging.CRITICAL: self.bold_red + self.fmt + self.reset
+                fmt = '[%(asctime)s] [%(levelname)s] %(message)s'
+                self.formats = {
+                    logging.DEBUG: self.grey + fmt + self.reset,
+                    logging.INFO: self.blue + fmt + self.reset,
+                    logging.WARNING: self.yellow + fmt + self.reset,
+                    logging.ERROR: self.red + fmt + self.reset,
+                    logging.CRITICAL: self.bold_red + fmt + self.reset
                 }
             
             def format(self, record):
-                log_fmt = self.FORMATS.get(record.levelno)
+                log_fmt = self.formats.get(record.levelno)
                 formatter = logging.Formatter(log_fmt, datefmt='%Y-%m-%d %H:%M:%S')
                 return formatter.format(record)
         
-        return ColoredFormatter(fmt)
+        return ColoredFormatter()
     
     async def log_to_channel(self, message, level="INFO"):
-        channel = self.bot.get_channel(self.bot_log_channel)
+        # log important events to discord channel
+        channel = self.bot.get_channel(self.bot_log)
         if not channel:
             return
         
@@ -97,8 +96,8 @@ class Logger(commands.Cog):
         
         try:
             await channel.send(log_msg)
-        except Exception as e:
-            print(f"failed to log to channel: {e}")
+        except Exception:
+            pass
     
     def get_container_users(self):
         try:
@@ -108,8 +107,7 @@ class Logger(commands.Cog):
             ], capture_output=True, text=True, timeout=5)
             
             if result.returncode == 0:
-                users = [u for u in result.stdout.strip().split('\n') if u]
-                return users
+                return [u for u in result.stdout.strip().split('\n') if u]
             return []
         except Exception:
             return []
@@ -119,10 +117,7 @@ class Logger(commands.Cog):
             result = subprocess.run([
                 "docker", "exec", "hzsh_linux", "uname", "-r"
             ], capture_output=True, text=True, timeout=5)
-            
-            if result.returncode == 0:
-                return result.stdout.strip()
-            return "unknown"
+            return result.stdout.strip() if result.returncode == 0 else "unknown"
         except Exception:
             return "unknown"
     
@@ -132,14 +127,12 @@ class Logger(commands.Cog):
         
         latency = round(self.bot.latency * 1000)
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        os_version = platform.platform()
         kernel_version = self.get_container_kernel()
         users = self.get_container_users()
         
         startup_msg = "bot startup\n"
         startup_msg += f"latency: {latency}ms\n"
         startup_msg += f"python: {python_version}\n"
-        startup_msg += f"os: {os_version}\n"
         startup_msg += f"container kernel: {kernel_version}\n"
         startup_msg += f"users in container: {len(users)}\n"
         
@@ -182,9 +175,7 @@ class Logger(commands.Cog):
     @commands.Cog.listener()
     async def on_error(self, event, *args, **kwargs):
         self.logger.exception(f'{event} / ')
-        
-        error_msg = f"event error: {event}"
-        await self.log_to_channel(error_msg, "ERROR")
+        await self.log_to_channel(f"event error: {event}", "ERROR")
     
     @commands.Cog.listener()
     async def on_member_join(self, member):
