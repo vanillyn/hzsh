@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 import os
 import subprocess
 import sys
+import config
 
 class Logger(commands.Cog):
     def __init__(self, bot):
@@ -123,7 +124,7 @@ class Logger(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        self.logger.info('hazel / shell ver 1.0 connected.')
+        self.logger.info(f'{config.NAME} ver 1.0 connected.')
         
         latency = round(self.bot.latency * 1000)
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"

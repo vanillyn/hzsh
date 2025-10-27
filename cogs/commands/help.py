@@ -1,4 +1,5 @@
 from discord.ext import commands
+import config
 
 class Help(commands.Cog):
     def __init__(self, bot):
@@ -6,8 +7,8 @@ class Help(commands.Cog):
     
     @commands.command(aliases=['commands', 'cmds', 'h', '?'])
     async def help(self, ctx):
-        msg = "**`hazel / shell`**\n\n"
-        msg += "`>connect` - connect to hazel / shell\n"
+        msg = f"**`{config.NAME}`**\n-# ver {config.VERSION}\n\n"
+        msg += f"`>connect` - connect to {config.NAME}\n"
         msg += "`>aw|gw|man [query]` - show information from a linux wiki or manual\n"
         msg += "`>achievements (-u user)` - view achievements\n"
         msg += "`>wp [query] (-t text|embed|container) (-l language) (-i bool) (--link bool) (-s query)` - show content from wikipedia\n"

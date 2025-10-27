@@ -239,7 +239,7 @@ class Shell(commands.Cog):
     async def sh(self, ctx, *, command: str):
         # quick shell command
         if not self.has_access(ctx.author):
-            await ctx.send("you are not connected to `hazel / shell`.")
+            await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
         
         async with ctx.typing():
@@ -254,7 +254,7 @@ class Shell(commands.Cog):
     async def cd(self, ctx, *, path: str = "~"):
         # change working directory
         if not self.has_access(ctx.author):
-            await ctx.send("you are not connected to `hazel / shell`.")
+            await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
         
         username = ctx.author.name
@@ -282,7 +282,7 @@ class Shell(commands.Cog):
     async def hzsh(self, ctx):
         # start interactive shell session
         if not self.has_access(ctx.author):
-            await ctx.send("you are not connected to `hazel / shell`.")
+            await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
         
         username = ctx.author.name

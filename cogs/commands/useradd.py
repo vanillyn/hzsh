@@ -23,12 +23,14 @@ class Useradd(commands.Cog):
         await asyncio.sleep(2)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ .. ]` creating user **{member.name}**"
         ))
         await asyncio.sleep(1)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ .. ]` connecting..."
@@ -36,6 +38,7 @@ class Useradd(commands.Cog):
         await asyncio.sleep(1)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ .. ]` connecting... .."
@@ -43,6 +46,7 @@ class Useradd(commands.Cog):
         await asyncio.sleep(1)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ .. ]` connecting... .. . ."
@@ -50,6 +54,7 @@ class Useradd(commands.Cog):
         await asyncio.sleep(5)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ .. ]` connecting... .. . .  .    ."
@@ -57,10 +62,11 @@ class Useradd(commands.Cog):
         await asyncio.sleep(1)
 
         await msg.edit(content=(
+            f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n"
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ OK ]` connected.\n"
-            "// connected to **hazel / shell** successfully.\n"
+            "// connected to **{config.NAME}** successfully.\n"
             "-# `[ INFO ]` start your first session with `>hzsh`"
         ))
 
