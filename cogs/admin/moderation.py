@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from datetime import datetime
 import asyncio
-import subprocess
 
 class Moderation(commands.Cog):
     def __init__(self, bot):
@@ -25,7 +24,7 @@ class Moderation(commands.Cog):
         if self.data_file.exists():
             with open(self.data_file, 'r') as f:
                 return json.load(f)
-        return {"warnings": {}, "bans": {}, "mutes": {}, "kicks": {}, "last_command": {}}
+        return {"warnings": {}, "bans": {}}
     
     def save_data(self):
         with open(self.data_file, 'w') as f:
@@ -37,7 +36,7 @@ class Moderation(commands.Cog):
     def has_mod_role(self, member):
         return discord.utils.get(member.roles, name="mod@hazelrun") is not None
     
-    def is_in_sudo_session(self, user_id):
+    def is_root(self, user_id):
         return str(user_id) in self.sudo_sessions
     
     async def log_moderation(self, action, moderator, target, reason, duration=None):
@@ -55,27 +54,50 @@ class Moderation(commands.Cog):
         
         await channel.send(f"```\n{msg}```")
     
-    def get_user_home_contents(self, username):
+    async def sudo_exec(self, command: str):
         try:
-            result = subprocess.run([
-                "docker", "exec", self.container_name,
-                "ls", "-lah", f"/home/{username}"
-            ], capture_output=True, text=True, timeout=5)
+            process = await asyncio.create_subprocess_exec(
+                "docker", "exec", "-u", "0", "-w", "/root",
+                self.container_name, "bash", "-c", command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
             
-            if result.returncode == 0:
-                return result.stdout.strip()
-            return "no home directory or access denied"
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=30.0
+            )
+            
+            exit_code = process.returncode
+            
+            output = stdout.decode('utf-8', errors='replace')
+            error = stderr.decode('utf-8', errors='replace')
+            
+            result = ""
+            if output:
+                result += output
+            if error:
+                result += error
+            
+            return result if result else f"hzsh: {command}: zero code with no output", exit_code
+            
+        except asyncio.TimeoutError:
+            return f"hzsh: {command}: timeout", 124
         except Exception as e:
-            return f"error reading directory: {str(e)}"
+            return f"hzsh: {command}: {str(e)}", 1
     
-    @commands.command(aliases=["doas"])
-    async def sudo(self, ctx, *, command: str = ''):
+    @commands.command(aliases=['doas'])
+    async def sudo(self, ctx, *, command: str = ' '):
         if not self.has_staff_role(ctx.author):
             await ctx.send("you lack the required permissions")
             return
         
-        if not command or command.strip() in ["-i", "-s", "su", ""]:
-            if self.is_in_sudo_session(ctx.author.id):
+        if not command:
+            await ctx.send("usage: >sudo <command>")
+            return
+        
+        if command.strip() == "su -":
+            if self.is_root(ctx.author.id):
                 await ctx.send("already in sudo session")
                 return
             
@@ -83,9 +105,6 @@ class Moderation(commands.Cog):
                 "channel": ctx.channel.id,
                 "started": datetime.now().isoformat()
             }
-            
-            root_role = discord.utils.get(ctx.guild.roles, name="root@hazelrun")
-            await ctx.author.add_roles(root_role)
             
             await ctx.send(f"elevated privileges granted to {ctx.author.mention}")
             await self.log_moderation("sudo_session", ctx.author, ctx.author, "started sudo session")
@@ -103,7 +122,7 @@ class Moderation(commands.Cog):
             
             try:
                 member = await commands.MemberConverter().convert(ctx, parts[1])
-            except discord.NotFound:
+            except discord.errors.NotFound:
                 await ctx.send("user not found")
                 return
             
@@ -124,7 +143,7 @@ class Moderation(commands.Cog):
             
             try:
                 await member.send(f"you have been warned in {ctx.guild.name}\nreason: {reason}")
-            except discord.HTTPException:
+            except discord.errors.HTTPException:
                 await ctx.send(f"warned {member.mention} but could not dm them")
             else:
                 await ctx.send(f"warned {member.mention}")
@@ -138,7 +157,7 @@ class Moderation(commands.Cog):
             
             try:
                 member = await commands.MemberConverter().convert(ctx, parts[1])
-            except discord.NotFound:
+            except discord.errors.NotFound:
                 await ctx.send("user not found")
                 return
             
@@ -168,7 +187,7 @@ class Moderation(commands.Cog):
             
             try:
                 await member.send(f"you have been banned from {ctx.guild.name}\nreason: {reason}\nduration: {duration if duration else 'permanent'}")
-            except discord.HTTPException:
+            except discord.errors.HTTPException:
                 pass
             
             await ctx.guild.ban(member, reason=reason, delete_message_days=0)
@@ -183,31 +202,38 @@ class Moderation(commands.Cog):
             
             try:
                 member = await commands.MemberConverter().convert(ctx, parts[1])
-            except discord.NotFound:
+            except discord.errors.NotFound:
                 await ctx.send("user not found")
                 return
             
             shell_role = discord.utils.get(ctx.guild.roles, name=config.SHELL_ACCESS_ROLE)
+            
+            if shell_role not in member.roles:
+                await ctx.send(f"{member.mention} doesnt have shell access")
+                return
+            
             await member.remove_roles(shell_role)
             await ctx.send(f"revoked shell access from {member.mention}")
             
             await self.log_moderation("userdel", ctx.author, member, "shell access revoked")
         
         else:
-            await ctx.send(f"unknown sudo command: {cmd}")
+            async with ctx.typing():
+                result, exit_code = await self.sudo_exec(command)
+            
+            if len(result) > 1900:
+                result = result[:1900] + "\n... output truncated"
+            
+            if self.logger:
+                self.logger.info(f"root command executed by {ctx.author.name}: {command} (exit: {exit_code})")
+            
+            await ctx.send(f"```\n{result}\n```")
     
     async def _auto_expire_sudo(self, user_id):
         await asyncio.sleep(1800)
         
         if str(user_id) in self.sudo_sessions:
             del self.sudo_sessions[str(user_id)]
-            
-            guild = self.bot.get_guild(config.GUILD_ID)
-            if guild:
-                member = guild.get_member(int(user_id))
-                if member:
-                    root_role = discord.utils.get(guild.roles, name="root@hazelrun")
-                    await member.remove_roles(root_role)
     
     @commands.command()
     async def kick(self, ctx, member: discord.Member, *, reason: str = "no reason provided"):
@@ -215,22 +241,9 @@ class Moderation(commands.Cog):
             await ctx.send("you lack the required permissions")
             return
         
-        user_id = str(member.id)
-        if user_id not in self.mod_data["kicks"]:
-            self.mod_data["kicks"][user_id] = []
-        
-        kick_entry = {
-            "moderator": str(ctx.author.id),
-            "reason": reason,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        self.mod_data["kicks"][user_id].append(kick_entry)
-        self.save_data()
-        
         try:
             await member.send(f"you have been kicked from {ctx.guild.name}\nreason: {reason}")
-        except discord.HTTPException:
+        except discord.errors.HTTPException:
             pass
         
         await ctx.guild.kick(member, reason=reason)
@@ -245,28 +258,16 @@ class Moderation(commands.Cog):
             return
         
         muted_role = discord.utils.get(ctx.guild.roles, name="| muted")
+        
         await member.add_roles(muted_role)
-        
-        user_id = str(member.id)
-        if user_id not in self.mod_data["mutes"]:
-            self.mod_data["mutes"][user_id] = []
-        
-        mute_entry = {
-            "moderator": str(ctx.author.id),
-            "reason": reason,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        self.mod_data["mutes"][user_id].append(mute_entry)
-        self.save_data()
-        
         await ctx.send(f"muted {member.mention}")
+        
         await self.log_moderation("mute", ctx.author, member, reason)
     
     @commands.command()
     async def warn(self, ctx, member: discord.Member, *, reason: str):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         user_id = str(member.id)
@@ -284,7 +285,7 @@ class Moderation(commands.Cog):
         
         try:
             await member.send(f"you have been warned in {ctx.guild.name}\nreason: {reason}")
-        except discord.HTTPException:
+        except discord.errors.HTTPException:
             await ctx.send(f"warned {member.mention} but could not dm them")
         else:
             await ctx.send(f"warned {member.mention}")
@@ -293,8 +294,8 @@ class Moderation(commands.Cog):
     
     @commands.command()
     async def ban(self, ctx, member: discord.Member, *, reason: str):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         reason_parts = reason.split()
@@ -322,7 +323,7 @@ class Moderation(commands.Cog):
         
         try:
             await member.send(f"you have been banned from {ctx.guild.name}\nreason: {reason}\nduration: {duration if duration else 'permanent'}")
-        except discord.HTTPException:
+        except discord.errors.HTTPException:
             pass
         
         await ctx.guild.ban(member, reason=reason, delete_message_days=0)
@@ -330,10 +331,10 @@ class Moderation(commands.Cog):
         
         await self.log_moderation("ban", ctx.author, member, reason, duration)
     
-    @commands.command()
+    @commands.command(aliases=['deletechannel','channeldel'])
     async def rmdir(self, ctx, channel_name: str):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         channel = discord.utils.get(ctx.guild.channels, name=channel_name)
@@ -349,8 +350,8 @@ class Moderation(commands.Cog):
     
     @commands.command()
     async def groupdel(self, ctx, role_name: str):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         role = discord.utils.get(ctx.guild.roles, name=role_name)
@@ -364,10 +365,10 @@ class Moderation(commands.Cog):
         
         await self.log_moderation("groupdel", ctx.author, role, f"deleted role {role_name}")
     
-    @commands.command()
-    async def groupadd(self, ctx, name: str, color: str = ''):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+    @commands.command(aliases=['addgroup', 'newrole', 'createrole'])
+    async def groupadd(self, ctx, name: str, color: str = ' '):
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         role_color = discord.Color.default()
@@ -377,7 +378,8 @@ class Moderation(commands.Cog):
                 if color.startswith('#'):
                     color = color[1:]
                 role_color = discord.Color(int(color, 16))
-            except Exception:
+            except Exception as e:
+                print(e)
                 await ctx.send("invalid color format. use hex like #ffffff")
                 return
         
@@ -390,19 +392,24 @@ class Moderation(commands.Cog):
         await ctx.send(f"created role {name}")
         await self.log_moderation("groupadd", ctx.author, role, f"created role {name}")
     
-    @commands.command()
+    @commands.command(aliases=['deluser', 'rmshell', 'shellban'])
     async def userdel(self, ctx, member: discord.Member):
-        if not self.is_in_sudo_session(ctx.author.id):
-            await ctx.send("requires sudo session. run >sudo -i")
+        if not self.is_root(ctx.author.id):
+            await ctx.send("requires sudo session. run >sudo su -")
             return
         
         shell_role = discord.utils.get(ctx.guild.roles, name=config.SHELL_ACCESS_ROLE)
+        
+        if shell_role not in member.roles:
+            await ctx.send(f"{member.mention} doesnt have shell access")
+            return
+        
         await member.remove_roles(shell_role)
         await ctx.send(f"revoked shell access from {member.mention}")
         
         await self.log_moderation("userdel", ctx.author, member, "shell access revoked")
     
-    @commands.command()
+    @commands.command(aliases=['lswarns', 'warns'])
     async def warnings(self, ctx, member: discord.Member):
         target = member or ctx.author
         user_id = str(target.id)
@@ -419,48 +426,6 @@ class Moderation(commands.Cog):
             msg += f"{i}. [{timestamp}] {warning['reason']}\n"
         
         await ctx.send(msg)
-    
-    @commands.command()
-    async def userinfo(self, ctx, member: discord.Member):
-        target = member or ctx.author
-        user_id = str(target.id)
-        
-        warnings = len(self.mod_data.get("warnings", {}).get(user_id, []))
-        mutes = len(self.mod_data.get("mutes", {}).get(user_id, []))
-        kicks = len(self.mod_data.get("kicks", {}).get(user_id, []))
-        bans = len(self.mod_data.get("bans", {}).get(user_id, []))
-        
-        last_cmd = self.mod_data.get("last_command", {}).get(user_id, "none")
-        
-        join_date = target.joined_at.strftime('%Y-%m-%d %H:%M:%S') if target.joined_at else "unknown"
-        created_date = target.created_at.strftime('%Y-%m-%d %H:%M:%S')
-        
-        top_roles = [r.name for r in target.roles if r.name != "@everyone"][:5]
-        roles_str = ", ".join(top_roles) if top_roles else "none"
-        
-        home_contents = self.get_user_home_contents(target.name)
-        
-        msg = f"**user info for {target.display_name}**\n"
-        msg += f"username: {target.display_name} ({target.name}) | "
-        msg += f"user id: {target.id}\n"
-        msg += f"account created: {created_date}\n"
-        msg += f"joined server: {join_date}\n"
-        msg += f"top roles: {roles_str}\n"
-        msg += "\n**infractions**\n"
-        msg += f"warnings: {warnings}\n"
-        msg += f"mutes: {mutes}\n"
-        msg += f"kicks: {kicks}\n"
-        msg += f"bans: {bans}\n"
-        msg += "\n**hzsh info**\n"
-        msg += f"last command: {last_cmd}\n"
-        msg += f"\nhome directory contents:\n```\n{home_contents}\n```"
-        
-        await ctx.send(msg)
-    
-    def record_command(self, user_id, command):
-        user_id = str(user_id)
-        self.mod_data["last_command"][user_id] = command
-        self.save_data()
 
 async def setup(bot):
     await bot.add_cog(Moderation(bot))

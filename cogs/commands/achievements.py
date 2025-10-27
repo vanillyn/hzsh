@@ -4,17 +4,15 @@ import config
 import json
 from pathlib import Path
 
-class Achievements(commands.Cog):
+class AchCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.data_file = Path("data/achievements.json")
         self.xp_file = Path("data/xp.json")
-        self.message_counts_file = Path("data/message_counts.json")
         self.data_file.parent.mkdir(exist_ok=True)
         
         self.user_achievements = self.load_data()
         self.user_xp = self.load_xp()
-        self.message_counts = self.load_message_counts()
         self.logger = self.bot.get_cog("Logging").logger if self.bot.get_cog("Logging") else None
     
     def load_data(self):
@@ -37,16 +35,6 @@ class Achievements(commands.Cog):
         with open(self.xp_file, 'w') as f:
             json.dump(self.user_xp, f, indent=2)
     
-    def load_message_counts(self):
-        if self.message_counts_file.exists():
-            with open(self.message_counts_file, 'r') as f:
-                return json.load(f)
-        return {}
-    
-    def save_message_counts(self):
-        with open(self.message_counts_file, 'w') as f:
-            json.dump(self.message_counts, f, indent=2)
-    
     def get_user_level(self, xp):
         level = 1
         xp_needed = 100
@@ -62,10 +50,16 @@ class Achievements(commands.Cog):
         user_id = str(user_id)
         return user_id in self.user_achievements and achievement_id in self.user_achievements[user_id]
     
+    def is_staff(self, member):
+        return discord.utils.get(member.roles, name="staff@hazelrun") is not None
+    
     async def grant_achievement(self, user_id, achievement_id, guild, channel):
         user_id = str(user_id)
         
         if self.has_achievement(user_id, achievement_id):
+            return False
+        
+        if achievement_id not in config.ACHIEVEMENTS:
             return False
         
         if user_id not in self.user_achievements:
@@ -96,26 +90,13 @@ class Achievements(commands.Cog):
                 )
             await member.add_roles(role)
         
-        ach_count = len(self.user_achievements[user_id])
-        for threshold, role_name in config.ACHIEVEMENT_MILESTONES.items():
-            if ach_count == threshold:
-                milestone_role = discord.utils.get(guild.roles, name=role_name)
-                if not milestone_role:
-                    milestone_role = await guild.create_role(
-                        name=role_name,
-                        reason="achievement milestone role"
-                    )
-                if member:
-                    await member.add_roles(milestone_role)
-        
         achievements_channel = guild.get_channel(config.ACHIEVEMENTS_CHANNEL)
         if achievements_channel:
-            ach_count = len(self.user_achievements[user_id])
-            total_achs = len(config.ACHIEVEMENTS)
+            level_msg = f"\n`★` [LVL] {member.mention if member else f'user {user_id}'} is now level {new_level}!" if new_level > old_level else ""
             
             await achievements_channel.send(
-                f"`★` [{ach_count}/{total_achs}] {member.mention if member else f'user {user_id}'} has gotten the {achievement['rarity']} achievement `{achievement['name']}`!\n"
-                f"**{achievement['description']}**"
+                f"``☆`` [ACH] {member.mention if member else f'user {user_id}'} unlocked **{achievement['name']}** ({achievement['rarity']}, +{xp_gain} xp)\n"
+                f"⋱ {achievement['description']}{level_msg}"
             )
         
         if self.logger:
@@ -123,16 +104,42 @@ class Achievements(commands.Cog):
         
         return True
     
+    async def revoke_achievement(self, user_id, achievement_id, guild):
+        user_id = str(user_id)
+        
+        if not self.has_achievement(user_id, achievement_id):
+            return False
+        
+        if achievement_id not in config.ACHIEVEMENTS:
+            return False
+        
+        self.user_achievements[user_id].remove(achievement_id)
+        self.save_data()
+        
+        achievement = config.ACHIEVEMENTS[achievement_id]
+        xp_loss = config.RARITY_XP[achievement["rarity"]]
+        
+        if user_id in self.user_xp:
+            self.user_xp[user_id] = max(0, self.user_xp[user_id] - xp_loss)
+            self.save_xp()
+        
+        member = guild.get_member(int(user_id))
+        
+        if achievement["role"] and member:
+            role = discord.utils.get(guild.roles, name=achievement["role"])
+            if role and role in member.roles:
+                await member.remove_roles(role)
+        
+        if self.logger:
+            self.logger.info(f"achievement revoked from {user_id}: {achievement_id} (-{xp_loss} xp)")
+        
+        return True
+    
     async def check_command_achievement(self, user_id, command, exit_code, guild, channel):
         for ach_id, ach_data in config.ACHIEVEMENTS.items():
             if ach_data["trigger_type"] == "command":
-                trigger = ach_data["trigger_value"]
-                if isinstance(trigger, list):
-                    if any(cmd in command for cmd in trigger):
-                        await self.grant_achievement(user_id, ach_id, guild, channel)
-                else:
-                    if command.startswith(trigger):
-                        await self.grant_achievement(user_id, ach_id, guild, channel)
+                if command.startswith(ach_data["trigger_value"]):
+                    await self.grant_achievement(user_id, ach_id, guild, channel)
             
             elif ach_data["trigger_type"] == "nonzero_exit":
                 if exit_code != 0 and exit_code is not None:
@@ -142,126 +149,211 @@ class Achievements(commands.Cog):
                 if "cat" in command and ach_data["trigger_value"] in command:
                     await self.grant_achievement(user_id, ach_id, guild, channel)
     
-    async def check_mutual_servers(self, member):
-        if not self.has_achievement(member.id, "neopolita"):
-            other_guild = self.bot.get_guild(config.NEO_POLITA)
-            if other_guild and other_guild.get_member(member.id):
-                await self.grant_achievement(str(member.id), "neopolita", member.guild, None)
+    def should_show_achievement(self, ach_id, user_has_it):
+        achievement = config.ACHIEVEMENTS[ach_id]
+        rarity = achievement["rarity"]
+        
+        if rarity in ["master", "legendary"]:
+            return user_has_it
+        elif rarity == "rare":
+            return True
+        else:
+            return True
     
-    async def check_message_achievements(self, user_id, message_content, guild):
-        user_id = str(user_id)
-        
-        if user_id not in self.message_counts:
-            self.message_counts[user_id] = {}
-        
-        content_lower = message_content.lower()
-        
-        for ach_id, ach_data in config.ACHIEVEMENTS.items():
-            if ach_data["trigger_type"] == "message_count":
-                word, threshold = ach_data["trigger_value"]
-                
-                if word in content_lower:
-                    count_key = f"word_{word}"
-                    if count_key not in self.message_counts[user_id]:
-                        self.message_counts[user_id][count_key] = 0
-                    
-                    self.message_counts[user_id][count_key] += 1
-                    self.save_message_counts()
-                    
-                    if self.message_counts[user_id][count_key] >= threshold:
-                        if not self.has_achievement(user_id, ach_id):
-                            await self.grant_achievement(user_id, ach_id, guild, None)
-    
-    async def check_presence_achievements(self, member, activity):
-        if not activity:
-            return
-        
-        for ach_id, ach_data in config.ACHIEVEMENTS.items():
-            if ach_data["trigger_type"] == "presence":
-                if isinstance(activity, (discord.Game, discord.Activity)):
-                    game_name = activity.name
-                    if any(game.lower() in str(game_name).lower() for game in ach_data["trigger_value"]):
-                        await self.grant_achievement(str(member.id), ach_id, member.guild, None)
-    
-    async def check_steam_games(self, member):
-        if self.has_achievement(member.id, "elitegamer"):
-            return
-        
-        for activity in member.activities:
-            if isinstance(activity, discord.Streaming):
-                continue
+    @commands.command(aliases=['achs', 'achievement', 'ach', 'quests'])
+    async def achievements(self, ctx, *args):
+        if not args:
+            user_id = str(ctx.author.id)
+            user_achs = self.user_achievements.get(user_id, [])
+            xp = self.user_xp.get(user_id, 0)
+            level, current_xp, xp_needed = self.get_user_level(xp)
             
-            if hasattr(activity, 'application_id'):
-                try:
-                    if member.public_flags.verified_bot_developer or any(
-                        conn.type == 'steam' and conn.verified 
-                        for conn in await member.fetch_connections() if hasattr(member, 'fetch_connections')
-                    ):
-                        pass
-                except Exception:
-                    pass
-    
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if message.author.bot or not message.guild:
+            msg = f"**{ctx.author.display_name}s achievements**\n"
+            msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
+            
+            visible_count = 0
+            for ach_id in config.ACHIEVEMENTS:
+                user_has = ach_id in user_achs
+                if self.should_show_achievement(ach_id, user_has):
+                    visible_count += 1
+            
+            msg += f"**unlocked: {len(user_achs)}/{visible_count}**\n\n"
+            
+            for ach_id in config.ACHIEVEMENTS:
+                ach = config.ACHIEVEMENTS[ach_id]
+                user_has = ach_id in user_achs
+                
+                if not self.should_show_achievement(ach_id, user_has):
+                    continue
+                
+                if user_has:
+                    if ach["rarity"] in ["master", "legendary"]:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n"
+                    else:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                else:
+                    if ach["rarity"] == "rare":
+                        msg += f"`☆` **hidden achievement** ({ach['rarity']})\n"
+                    else:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+            
+            await ctx.send(msg)
             return
         
-        if message.guild.id == config.GUILD_ID:
-            await self.check_message_achievements(message.author.id, message.content, message.guild)
-    
-    @commands.Cog.listener()
-    async def on_member_join(self, member):
-        if member.guild.id == config.GUILD_ID:
-            await self.check_mutual_servers(member)
-    
-    @commands.Cog.listener()
-    async def on_presence_update(self, before, after):
-        if after.guild.id != config.GUILD_ID:
-            return
+        if args[0] in ["-g", "--grant"]:
+            if not self.is_staff(ctx.author):
+                await ctx.send("you lack the required permissions")
+                return
+            
+            if len(args) < 3:
+                await ctx.send("usage: >achievements -g -u user achievement_name")
+                return
+            
+            if args[1] not in ["-u"]:
+                await ctx.send("usage: >achievements -g -u user achievement_name")
+                return
+            
+            try:
+                member = await commands.MemberConverter().convert(ctx, args[2])
+            except discord.errors.NotFound:
+                await ctx.send("user not found")
+                return
+            
+            achievement_name = " ".join(args[3:]) if len(args) > 3 else args[2]
+            
+            ach_id = None
+            for aid, adata in config.ACHIEVEMENTS.items():
+                if aid == achievement_name or adata["name"].lower() == achievement_name.lower():
+                    ach_id = aid
+                    break
+            
+            if not ach_id:
+                await ctx.send(f"achievement not found: {achievement_name}")
+                return
+            
+            success = await self.grant_achievement(str(member.id), ach_id, ctx.guild, ctx.channel)
+            
+            if success:
+                await ctx.send(f"granted achievement {ach_id} to {member.mention}")
+            else:
+                await ctx.send(f"{member.mention} already has this achievement")
         
-        if before.activities != after.activities:
-            for activity in after.activities:
-                await self.check_presence_achievements(after, activity)
+        elif args[0] in ["-r", "--revoke"]:
+            if not self.is_staff(ctx.author):
+                await ctx.send("you lack the required permissions")
+                return
+            
+            if len(args) < 3:
+                await ctx.send("usage: >achievements -r -u user achievement_name")
+                return
+            
+            if args[1] not in ["-u"]:
+                await ctx.send("usage: >achievements -r -u user achievement_name")
+                return
+            
+            try:
+                member = await commands.MemberConverter().convert(ctx, args[2])
+            except discord.errors.NotFound:
+                await ctx.send("user not found")
+                return
+            
+            achievement_name = " ".join(args[3:]) if len(args) > 3 else args[2]
+            
+            ach_id = None
+            for aid, adata in config.ACHIEVEMENTS.items():
+                if aid == achievement_name or adata["name"].lower() == achievement_name.lower():
+                    ach_id = aid
+                    break
+            
+            if not ach_id:
+                await ctx.send(f"achievement not found: {achievement_name}")
+                return
+            
+            success = await self.revoke_achievement(str(member.id), ach_id, ctx.guild)
+            
+            if success:
+                await ctx.send(f"revoked achievement {ach_id} from {member.mention}")
+            else:
+                await ctx.send(f"{member.mention} doesnt have this achievement")
+        
+        elif args[0] in ["-u"]:
+            if len(args) < 2:
+                await ctx.send("usage: >achievements -u user")
+                return
+            
+            try:
+                member = await commands.MemberConverter().convert(ctx, args[1])
+            except discord.errors.NotFound:
+                await ctx.send("user not found")
+                return
+            
+            user_id = str(member.id)
+            user_achs = self.user_achievements.get(user_id, [])
+            xp = self.user_xp.get(user_id, 0)
+            level, current_xp, xp_needed = self.get_user_level(xp)
+            
+            msg = f"**{member.display_name}s achievements**\n"
+            msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
+            
+            visible_count = 0
+            for ach_id in config.ACHIEVEMENTS:
+                user_has = ach_id in user_achs
+                if self.should_show_achievement(ach_id, user_has):
+                    visible_count += 1
+            
+            msg += f"**unlocked: {len(user_achs)}/{visible_count}**\n\n"
+            
+            for ach_id in config.ACHIEVEMENTS:
+                ach = config.ACHIEVEMENTS[ach_id]
+                user_has = ach_id in user_achs
+                
+                if not self.should_show_achievement(ach_id, user_has):
+                    continue
+                
+                if user_has:
+                    if ach["rarity"] in ["master", "legendary"]:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n"
+                    else:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                else:
+                    if ach["rarity"] == "rare":
+                        msg += f"`☆` **hidden achievement** ({ach['rarity']})\n"
+                    else:
+                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+            
+            await ctx.send(msg)
     
     @commands.command()
-    async def myachievements(self, ctx):
-        user_id = str(ctx.author.id)
+    async def leaderboard(self, ctx):
+        sorted_users = sorted(
+            self.user_xp.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
         
-        if user_id not in self.user_achievements or not self.user_achievements[user_id]:
-            await ctx.send("you have no achievements yet")
+        if not sorted_users:
+            await ctx.send("no users on the leaderboard yet")
             return
         
-        user_achs = self.user_achievements[user_id]
-        xp = self.user_xp.get(user_id, 0)
-        level, current_xp, xp_needed = self.get_user_level(xp)
+        msg = "**xp leaderboard**\n\n"
         
-        ach_list = []
-        for ach_id in user_achs:
-            ach = config.ACHIEVEMENTS[ach_id]
-            ach_list.append(f"☆ **{ach['name']}** ({ach['rarity']})\n  └─ {ach['description']}")
-        
-        msg = f"**{ctx.author.display_name}s achievements**\n"
-        msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
-        msg += "\n".join(ach_list)
+        for i, (user_id, xp) in enumerate(sorted_users[:10], 1):
+            level, current_xp, xp_needed = self.get_user_level(xp)
+            member = ctx.guild.get_member(int(user_id))
+            
+            username = member.display_name if member else f"user {user_id}"
+            
+            medal = ""
+            if i == 1:
+                medal = "# [1] "
+            elif i == 2:
+                medal = "## [2] "
+            elif i == 3:
+                medal = "### [3] "
+            
+            msg += f"{medal}{i}. **{username}** - level {level} ({xp} xp)\n"
         
         await ctx.send(msg)
-    
-    @commands.command()
-    async def level(self, ctx, member: discord.Member):
-        target = member or ctx.author
-        user_id = str(target.id)
-        
-        xp = self.user_xp.get(user_id, 0)
-        level, current_xp, xp_needed = self.get_user_level(xp)
-        
-        ach_count = len(self.user_achievements.get(user_id, []))
-        total_achs = len(config.ACHIEVEMENTS)
-        
-        await ctx.send(
-            f"**{target.display_name}**\n"
-            f"level {level} | {current_xp}/{xp_needed} xp\n"
-            f"achievements: {ach_count}/{total_achs}"
-        )
 
 async def setup(bot):
-    await bot.add_cog(Achievements(bot))
+    await bot.add_cog(AchCommands(bot))

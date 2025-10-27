@@ -259,15 +259,7 @@ ACHIEVEMENTS = {
         "trigger_type": "puzzle",
         "trigger_value": None,
         "role": "> baller",
-    },
-    "silence": {
-        "name": "...",
-        "description": "bring silence back to the forest of sound",
-        "rarity": "master",
-        "trigger_type": "puzzle",
-        "trigger_value": None,
-        "role": "> enfin, le silence...",
-    },
+    }
 }
 
 RARITY_XP = {

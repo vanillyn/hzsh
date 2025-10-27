@@ -169,7 +169,7 @@ class Shell(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.container_name = "hzsh_linux"
-        self.home_dir = Path("root/home")
+        self.home_dir = Path("hazelrun/home")
         self.working_dirs = {}
         self.sessions = {}
         self.user_id_map = {}
@@ -309,8 +309,8 @@ class Shell(commands.Cog):
         else:
             await ctx.send(f"```\n{result}\n```")
     
-    @commands.command(name='hzsh')
-    async def interactive_shell(self, ctx):
+    @commands.command(name='hzsh', aliases=['shell', 'bash', 'connect', 'ssh'])
+    async def hazelshell(self, ctx):
         if not self.has_shell_access(ctx.author):
             await ctx.send("you are not connected to `hazel / shell`.")
             return
@@ -653,7 +653,7 @@ class Shell(commands.Cog):
             translated = re.sub(pattern, replace_backspace, translated)
         
         translated = translated.replace('[^C]', '\x03')
-        translated = translated.replace('[^D]', '\x04')
+        translated = translated.replace('[^D]', 'echo use [EXIT] to leave the shell\n')
         translated = translated.replace('[^Z]', '\x1a')
         translated = translated.replace('[^L]', '\x0c')
         translated = translated.replace('[UP]', '\x1b[A')
@@ -671,7 +671,9 @@ class Shell(commands.Cog):
             for i in range(1, len(parts)):
                 if parts[i]:
                     first_char = parts[i][0]
-                    if first_char.isalpha():
+                    if first_char == "D":
+                        parts[i] = "echo use [EXIT] to leave the shell\n"
+                    elif first_char.isalpha():
                         ctrl_char = chr(ord(first_char.upper()) - 64)
                         parts[i] = ctrl_char + parts[i][1:]
             translated = ''.join(parts)

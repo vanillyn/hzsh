@@ -1,8 +1,9 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import os
 from dotenv import load_dotenv
 import asyncio
+import random
 
 load_dotenv()
 
@@ -17,8 +18,32 @@ bot = commands.Bot(
     help_command=None
 )
 
+STATUS_LIST = [
+    {"type": "playing", "name": "in Arch Linux"},
+    {"type": "playing", "name": "with /dev/null"},
+    {"type": "playing", "name": "in the terminal"},
+    {"type": "listening", "name": "kernel messages"},
+    {"type": "listening", "name": "system calls"},
+    {"type": "listening", "name": "grep output"},
+    {"type": "watching", "name": "processes"},
+    {"type": "watching", "name": "/var/log"},
+    {"type": "watching", "name": "system resources"},
+]
+
+@tasks.loop(minutes=10)
+async def rotate_status():
+    status = random.choice(STATUS_LIST)
+    
+    activity_type = {
+        "playing": discord.ActivityType.playing,
+        "listening": discord.ActivityType.listening,
+        "watching": discord.ActivityType.watching,
+    }.get(status["type"], discord.ActivityType.playing)
+    print(f'\x1b[38;21m[{discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] [STATUS] {status["type"]} {status["name"]}\x1b[0m')
+    activity = discord.Activity(type=activity_type, name=status["name"])
+    await bot.change_presence(activity=activity, status=discord.Status.idle)
+
 async def load_cogs():
-    """i never liked the name "cogs" lmao and copilot wants to add the word anyway shut up pls LMAO it put :("""
     import os
     from pathlib import Path
     
@@ -36,7 +61,6 @@ async def load_cogs():
                 
                 try:
                     await bot.load_extension(module)
-                    # print(f'{module} is connected.')
                 except Exception as e:
                     print(f'failed to load {module}: {e}')
 
@@ -49,7 +73,13 @@ async def main():
             print('DISCORD_TOKEN not found in environment variables')
             exit(1)
         
-        print('[XXXX-XX-XX XX:XX:XX] [hzsh] connecting...  ..   .     .          .                    .')
+        print('[XXXX-XX-XX XX:XX:XX] [HZSH] connecting...  ..   .     .          .                    .')
+        
+        @bot.event
+        async def on_ready():
+            if not rotate_status.is_running():
+                rotate_status.start()
+        
         await bot.start(token)
 
 if __name__ == '__main__':

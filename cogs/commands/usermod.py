@@ -12,7 +12,16 @@ class UserMod(commands.Cog):
         if not marker:
             marker = await guild.create_role(
                 name="colors:",
-                reason="marker role for custom colors"
+                reason="marker role for colors"
+            )
+        return marker
+    
+    async def get_or_create_pronouns_marker(self, guild):
+        marker = discord.utils.get(guild.roles, name="pronouns:")
+        if not marker:
+            marker = await guild.create_role(
+                name="pronouns:",
+                reason="marker role for pronouns"
             )
         return marker
     
@@ -22,19 +31,39 @@ class UserMod(commands.Cog):
                 return role
         return None
     
+    async def get_user_pronoun_role(self, member):
+        pronouns_marker = discord.utils.get(member.guild.roles, name="pronouns:")
+        if not pronouns_marker:
+            return None
+        
+        for role in member.roles:
+            if role.position < pronouns_marker.position and "/" in role.name and role.name not in config.USERMOD_MAPPINGS.get("pronouns", {}).values():
+                return role
+        return None
+    
     @commands.command(name="usermod", aliases=["um", "hazelprofile", "hzpf", "chfn"])
-    async def usermod(self, ctx, category: str = ' ', *, value: str = ' '):
-        if not category or not value:
+    async def usermod(self, ctx, category: str = '', *, value: str = ''):
+        if not category:
             categories = ", ".join(config.USERMOD_CATEGORIES.keys())
-            await ctx.send(f"usage: >usermod <category> <value>\navailable categories: {categories}, color\nadd -r to remove a role")
+            await ctx.send(f"usage: >usermod <category> <value>\navailable categories: {categories}, color, pronouns\n-l to change display name\nadd -r to remove a role")
+            return
+        
+        guild = ctx.guild
+        member = ctx.author
+        
+        if category == "-l":
+            if not value:
+                await ctx.send("usage: >usermod -l new_name")
+                return
+            
+            old_name = member.display_name
+            await member.edit(nick=value)
+            await ctx.send(f"changed display name from {old_name} to {value}")
             return
         
         remove_mode = '-r' in category or '-r' in value
         category = category.replace('-r', '').strip().lower()
         value = value.replace('-r', '').strip()
-        
-        guild = ctx.guild
-        member = ctx.author
         
         if category == "color" or category == "colour":
             if remove_mode:
@@ -78,8 +107,45 @@ class UserMod(commands.Cog):
             await ctx.send(f"set your color to #{hex_code}")
             return
         
+        if category == "pronouns":
+            if remove_mode:
+                old_role = await self.get_user_pronoun_role(member)
+                if old_role:
+                    await member.remove_roles(old_role)
+                    await old_role.delete(reason="user removed pronouns")
+                    await ctx.send("removed your pronoun role")
+                else:
+                    await ctx.send("you dont have a pronoun role")
+                return
+            
+            if not value:
+                await ctx.send("usage: >usermod pronouns <your pronouns>")
+                return
+            
+            old_role = await self.get_user_pronoun_role(member)
+            if old_role:
+                await member.remove_roles(old_role)
+                await old_role.delete(reason="replacing with new pronouns")
+            
+            marker = await self.get_or_create_pronouns_marker(guild)
+            marker_pos = marker.position
+            
+            new_role = await guild.create_role(
+                name=value,
+                reason=f"custom pronouns for {member.name}"
+            )
+            
+            try:
+                await new_role.edit(position=marker_pos - 1)
+            except discord.HTTPException:
+                pass
+            
+            await member.add_roles(new_role)
+            await ctx.send(f"set your pronouns to {value}")
+            return
+        
         if category not in config.USERMOD_MAPPINGS:
-            await ctx.send(f"unknown category. available: {', '.join(config.USERMOD_CATEGORIES.keys())}, color")
+            await ctx.send(f"unknown category. available: {', '.join(config.USERMOD_CATEGORIES.keys())}, color, pronouns")
             return
         
         value_lower = value.lower()
@@ -99,10 +165,8 @@ class UserMod(commands.Cog):
         target_role = discord.utils.get(guild.roles, name=role_name)
         
         if not target_role:
-            target_role = await guild.create_role(
-                name=role_name,
-                reason=f"{config.USERMOD_CATEGORIES[category]} role created automatically"
-            )
+            await ctx.send(f"role {role_name} doesnt exist. contact an admin")
+            return
         
         if remove_mode:
             if target_role in member.roles:

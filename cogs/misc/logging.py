@@ -23,8 +23,8 @@ class Logger(commands.Cog):
         logger.handlers.clear()
         
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(self._get_colored_formatter('[%(asctime)s] [%(levelname)s] %(message)s'))
+        console_handler.setLevel(logging.DEBUG)
+        console_handler.setFormatter(self.formatter_colors('[%(asctime)s] [%(levelname)s] %(message)s'))
         
         file_handler = RotatingFileHandler(
             'logs/bot.log',
@@ -60,7 +60,7 @@ class Logger(commands.Cog):
         
         return logger
     
-    def _get_colored_formatter(self, fmt):
+    def formatter_colors(self, fmt):
         class ColoredFormatter(logging.Formatter):
             grey = '\x1b[38;21m'
             blue = '\x1b[38;5;39m'
@@ -128,12 +128,7 @@ class Logger(commands.Cog):
     
     @commands.Cog.listener()
     async def on_ready(self):
-        self.logger.info('hazel / shell ver 0.3-alpha connected.')
-        
-        await self.bot.change_presence(
-            activity=discord.Game(name="in Arch Linux"),
-            status=discord.Status.online
-        )
+        self.logger.info('hazel / shell ver 1.0 connected.')
         
         latency = round(self.bot.latency * 1000)
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"

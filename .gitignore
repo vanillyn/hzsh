@@ -49,9 +49,6 @@ coverage.xml
 # Sphinx documentation
 docs/_build/
 
-# Container mount
-root/
-
 # Environment variables file
 .env
 
@@ -62,7 +59,7 @@ root/
 logs/
 
 # Fake root directory
-fakeroot/
+hazelrun/
 
 # Virtual environment
 venv/
