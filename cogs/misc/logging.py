@@ -176,7 +176,7 @@ class Logger(commands.Cog):
         elif isinstance(error, commands.BadArgument):
             await ctx.send('what do i do with this...')
         else:
-            await ctx.send('something went wrong... @vanillyn')
+            await ctx.send('something went wrong... <@1033539983161708554>')
             self.logger.exception(f'unhandled error in {ctx.command}')
     
     @commands.Cog.listener()

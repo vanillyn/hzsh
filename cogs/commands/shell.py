@@ -309,7 +309,7 @@ class Shell(commands.Cog):
         else:
             await ctx.send(f"```\n{result}\n```")
     
-    @commands.command(name='hzsh', aliases=['shell', 'bash', 'connect', 'ssh'])
+    @commands.command(name='hzsh', aliases=['shell', 'bash', 'ssh'])
     async def hazelshell(self, ctx):
         if not self.has_shell_access(ctx.author):
             await ctx.send("you are not connected to `hazel / shell`.")
@@ -576,7 +576,7 @@ class Shell(commands.Cog):
             session["active"] = False
         except Exception as e:
             print(f"error updating screen: {e}")
-    
+            
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
@@ -605,30 +605,28 @@ class Shell(commands.Cog):
             except Exception:
                 process.kill()
             
+            screen = session["screen"]
+            screen.clear()
+            
+            exit_text = "shell session closed"
+            exit_row = screen.height // 2
+            exit_col = (screen.width - len(exit_text)) // 2
+            
+            screen.move_cursor(x=exit_col, y=exit_row)
+            for char in exit_text:
+                screen.write_char(char)
+            
+            lines = screen.get_display(show_cursor=False)
+            screen_content = "```ansi\n" + "\n".join(lines) + "\n```"
+            
+            try:
+                await session["screen_msg"].edit(content=screen_content)
+            except Exception:
+                pass
+            
             if discord_id in self.sessions:
                 del self.sessions[discord_id]
             
-            await message.channel.send("shell session closed")
-            try:
-                await message.delete()
-            except Exception:
-                pass
-            return
-        
-        screen = session["screen"]
-        
-        if content == '[PGUP]':
-            screen.scroll_view_up(12)
-            await self._update_screen(discord_id)
-            try:
-                await message.delete()
-            except Exception:
-                pass
-            return
-        
-        if content == '[PGDN]':
-            screen.scroll_view_down(12)
-            await self._update_screen(discord_id)
             try:
                 await message.delete()
             except Exception:
@@ -653,7 +651,7 @@ class Shell(commands.Cog):
             translated = re.sub(pattern, replace_backspace, translated)
         
         translated = translated.replace('[^C]', '\x03')
-        translated = translated.replace('[^D]', 'echo use [EXIT] to leave the shell\n')
+        translated = translated.replace('[^D]', 'echo use [EXIT] to close the shell session[]')
         translated = translated.replace('[^Z]', '\x1a')
         translated = translated.replace('[^L]', '\x0c')
         translated = translated.replace('[UP]', '\x1b[A')
@@ -671,8 +669,8 @@ class Shell(commands.Cog):
             for i in range(1, len(parts)):
                 if parts[i]:
                     first_char = parts[i][0]
-                    if first_char == "D":
-                        parts[i] = "echo use [EXIT] to leave the shell\n"
+                    if first_char == 'D':
+                        parts[i] = 'echo use [EXIT] to close the shell session[]' + parts[i][1:]
                     elif first_char.isalpha():
                         ctrl_char = chr(ord(first_char.upper()) - 64)
                         parts[i] = ctrl_char + parts[i][1:]

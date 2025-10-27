@@ -39,9 +39,15 @@ async def rotate_status():
         "listening": discord.ActivityType.listening,
         "watching": discord.ActivityType.watching,
     }.get(status["type"], discord.ActivityType.playing)
-    print(f'\x1b[38;21m[{discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] [STATUS] {status["type"]} {status["name"]}\x1b[0m')
+    
+    print(f'\033[90m[{discord.utils.utcnow().strftime("%Y-%m-%d %H:%M:%S")}] [STATUS] {status["type"]} {status["name"]}\033[0m')
+    
     activity = discord.Activity(type=activity_type, name=status["name"])
     await bot.change_presence(activity=activity, status=discord.Status.idle)
+
+@rotate_status.before_loop
+async def before_rotate_status():
+    await bot.wait_until_ready()
 
 async def load_cogs():
     import os
@@ -67,6 +73,8 @@ async def load_cogs():
 async def main():
     async with bot:
         await load_cogs()
+        rotate_status.start()
+        
         token = os.getenv('DISCORD_TOKEN')
         
         if not token:
@@ -74,12 +82,6 @@ async def main():
             exit(1)
         
         print('[XXXX-XX-XX XX:XX:XX] [HZSH] connecting...  ..   .     .          .                    .')
-        
-        @bot.event
-        async def on_ready():
-            if not rotate_status.is_running():
-                rotate_status.start()
-        
         await bot.start(token)
 
 if __name__ == '__main__':
