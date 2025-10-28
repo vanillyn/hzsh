@@ -293,24 +293,48 @@ class AchCommands(commands.Cog):
             await ctx.send(msg)
     
     @commands.command()
-    async def leaderboard(self, ctx):
-        # show top users by xp
+    async def leaderboard(self, ctx, page: int = 1):
         sorted_users = sorted(self.user_xp.items(), key=lambda x: x[1], reverse=True)
-        
+
         if not sorted_users:
             await ctx.send("no users on the leaderboard yet")
             return
-        
-        msg = "**xp leaderboard**\n\n"
-        
-        for i, (user_id, xp) in enumerate(sorted_users[:10], 1):
+
+        user_rank = None
+        user_xp_val = self.user_xp.get(str(ctx.author.id), 0)
+        for i, (uid, xp) in enumerate(sorted_users, 1):
+            if uid == str(ctx.author.id):
+                user_rank = i
+                break
+            
+        per_page = 10
+        total_pages = (len(sorted_users) + per_page - 1) // per_page
+        page = max(1, min(page, total_pages))
+
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        msg = f"**xp leaderboard** (page {page}/{total_pages})\n"
+        if user_rank:
+            level, _, _ = self.get_level(user_xp_val)
+            msg += f"-# your rank: #{user_rank} | level {level} | {user_xp_val} xp\n\n"
+        else:
+            msg += "\n"
+
+        for i, (user_id, xp) in enumerate(sorted_users[start_idx:end_idx], start_idx + 1):
             level, current_xp, xp_needed = self.get_level(xp)
             member = ctx.guild.get_member(int(user_id))
             username = member.display_name if member else f"user {user_id}"
-            
-            medal = ["# [1] ", "## [2] ", "### [3] "][i-1] if i <= 3 else ""
-            msg += f"{medal}{i}. **{username}** - level {level} ({xp} xp)\n"
-        
+
+            if i <= 3 and page == 1:
+                medals = ["# [1] ", "## [2] ", "### [3] "]
+                msg += f"{medals[i-1]}{i}. **{username}** - level {level} ({xp} xp)\n"
+            else:
+                msg += f"{i}. **{username}** - level {level} ({xp} xp)\n"
+
+        if total_pages > 1:
+            msg += "\n-# use >leaderboard <page> to view other pages"
+
         await ctx.send(msg)
 
 async def setup(bot):
