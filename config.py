@@ -194,10 +194,10 @@ ACHIEVEMENTS = {
     },
     "ricer": {
         "name": "ricer instinct",
-        "description": "run neofetch, fastfetch, or hyfetch",
-        "rarity": "common",
-        "trigger_type": "command",
-        "trigger_value": ["neofetch", "fastfetch", "hyfetch"],
+        "description": "run hazelfetch",
+        "rarity": "rare",
+        "trigger_type": "message_count",
+        "trigger_value": (">hazelfetch", 1),
         "role": "> ricer instinct",
     },
     "packaged": {

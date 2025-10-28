@@ -36,7 +36,6 @@ class AchCommands(commands.Cog):
             json.dump(self.user_xp, f, indent=2)
     
     def get_level(self, xp):
-        # calculate level from xp with exponential scaling
         level = 1
         xp_needed = 100
         
@@ -76,9 +75,7 @@ class AchCommands(commands.Cog):
         if user_id not in self.user_xp:
             self.user_xp[user_id] = 0
         
-        old_level, _, _ = self.get_level(self.user_xp[user_id])
         self.user_xp[user_id] += xp_gain
-        new_level, current_xp, xp_needed = self.get_level(self.user_xp[user_id])
         self.save_xp()
         
         member = guild.get_member(int(user_id))
@@ -92,14 +89,6 @@ class AchCommands(commands.Cog):
                 )
             await member.add_roles(role)
         
-        ach_channel = guild.get_channel(config.ACHIEVEMENTS_CHANNEL)
-        if ach_channel:
-            level_msg = f"\n`★` [LVL] {member.mention if member else f'user {user_id}'} is now level {new_level}!" if new_level > old_level else ""
-            
-            await ach_channel.send(
-                f"``☆`` [ACH] {member.mention if member else f'user {user_id}'} unlocked **{achievement['name']}** ({achievement['rarity']}, +{xp_gain} xp)\n"
-                f"⋱ {achievement['description']}{level_msg}"
-            )
         
         if self.logger:
             self.logger.info(f"achievement granted to {user_id}: {achievement_id} (+{xp_gain} xp)")

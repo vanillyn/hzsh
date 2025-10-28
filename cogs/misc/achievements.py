@@ -111,10 +111,9 @@ class Achievements(commands.Cog):
         achievements_channel = guild.get_channel(config.ACHIEVEMENTS_CHANNEL)
         if achievements_channel:
             ach_count = len(self.user_achievements[user_id])
-            total_achs = len(config.ACHIEVEMENTS)
             
             await achievements_channel.send(
-                f"`★` [{ach_count}/{total_achs}] {member.mention if member else f'user {user_id}'} has gotten the {achievement['rarity']} achievement `{achievement['name']}`!\n"
+                f"`★` [{ach_count}/17] {member.mention if member else f'user {user_id}'} has gotten the {achievement['rarity']} achievement `{achievement['name']}`!\n"
                 f"**{achievement['description']}**"
             )
         
