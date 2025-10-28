@@ -13,6 +13,7 @@ class Help(commands.Cog):
         msg += "`>achievements (-u user)` - view achievements\n"
         msg += "`>wp [query] (-t text|embed|container) (-l language) (-i bool) (--link bool) (-s query)` - show content from wikipedia\n"
         msg += "`>leaderboard` - xp leaderboard\n"
+        msg += "`>alias [-a|-r|-e|-L] [-n name] [-c \"content\"] [-l language] [-N new_name] - add and manage aliases\n"
         
         await ctx.send(msg)
 
