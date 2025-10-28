@@ -254,7 +254,7 @@ ACHIEVEMENTS = {
         "rarity": "common",
         "trigger_type": "message_count",
         "trigger_value": ("woof", 20),
-        "role": "> got that dawg",
+        "role": "> woof :3",
     },
     "saythatagain": {
         "name": "say that again...",
@@ -262,7 +262,7 @@ ACHIEVEMENTS = {
         "rarity": "rare",
         "trigger_type": "message_count",
         "trigger_value": ("woof", 100),
-        "role": None,
+        "role": "> got that dawg",
     },
     "suchadog": {
         "name": "such a dog...",
