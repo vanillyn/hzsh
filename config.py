@@ -6,7 +6,7 @@ NEO_POLITA = 1395939916189405325
 SHELL_ACCESS_ROLE = "> connected..."
 ACHIEVEMENTS_CHANNEL = 1429897092226351244
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 USERMOD_MAPPINGS = {
     "pronouns": {
@@ -279,7 +279,15 @@ ACHIEVEMENTS = {
         "trigger_type": "message_count",
         "trigger_value": ("i'm confused", 5),
         "role": "> a_confuseduser",
-    },   
+    },
+    "toroplushie": {
+        "name": ":toroplushie:",
+        "description": "use the :toroplushie: emote 20 times",
+        "rarity": "rare",
+        "trigger_type": "message_count",
+        "trigger_value": (":toroplushie:", 20),
+        "role": "> XD",
+    },
     "lost": {
         "name": "lost...",
         "description": "you're late, but you can still bring us silence.",
