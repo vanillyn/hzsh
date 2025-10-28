@@ -66,7 +66,7 @@ class Useradd(commands.Cog):
             f"-# `[ OK ]` directory **/home/{member.name}** created\n"
             f"-# `[ OK ]` user **{member.name}** created\n"
             "-# `[ OK ]` connected.\n"
-            "// connected to **{config.NAME}** successfully.\n"
+            f"// connected to **{config.NAME}** successfully.\n"
             "-# `[ INFO ]` start your first session with `>hzsh`"
         ))
 
