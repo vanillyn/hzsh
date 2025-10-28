@@ -17,9 +17,8 @@ class Useradd(commands.Cog):
             await ctx.send("you are already connected.")
             return
         
-        await member.add_roles(shell_role)
 
-        msg = await ctx.send(f"-# `[ .. ]` creating directory **/home/{member.name}**")
+        msg = await ctx.send(f"-# `[ OK ]` **hzrc** is starting **{config.NAME}** ver. {config.VERSION}\n-# `[ .. ]` creating directory **/home/{member.name}**")
         await asyncio.sleep(2)
 
         await msg.edit(content=(
@@ -69,6 +68,7 @@ class Useradd(commands.Cog):
             f"// connected to **{config.NAME}** successfully.\n"
             "-# `[ INFO ]` start your first session with `>hzsh`"
         ))
-
+        
+        await member.add_roles(shell_role)
 async def setup(bot):
     await bot.add_cog(Useradd(bot))
