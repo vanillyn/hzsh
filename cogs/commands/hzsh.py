@@ -113,41 +113,45 @@ class Terminal:
                 visible = self.buffer
         else:
             visible = self.buffer
-        
+
         lines = []
         for y, line_buffer in enumerate(visible):
             parts = []
             current_ansi = ''
-            
+
             for x in range(self.width):
                 if x >= len(line_buffer):
                     break
-                    
+
                 char, style = line_buffer[x]
                 show_here = show_cursor and self.scroll_offset == 0 and y == self.cursor_y and x == self.cursor_x
-                
+
                 if show_here:
                     if current_ansi:
-                        parts.append(current_ansi)
+                        parts.append('\x1b[0m')
                         current_ansi = ''
                     parts.append('\x1b[7m')
                     parts.append(char if char != ' ' else ' ')
                     parts.append('\x1b[27m')
                     if style:
+                        parts.append(style)
                         current_ansi = style
                 else:
                     if style != current_ansi:
                         if current_ansi:
-                            parts.append(current_ansi)
+                            parts.append('\x1b[0m')
+                        if style:
+                            parts.append(style)
                         current_ansi = style
                     parts.append(char)
-            
+
+            # always reset at end of line
             if current_ansi:
                 parts.append('\x1b[0m')
-            
+
             line = ''.join(parts)
             lines.append(line if line and not line.replace('\x1b[0m', '').replace('\x1b[7m', '').replace('\x1b[27m', '').isspace() else ' ')
-        
+
         return lines
 
 class Shell(commands.Cog):
@@ -280,14 +284,13 @@ class Shell(commands.Cog):
         asyncio.create_task(self._read_output(discord_id))
     
     async def _read_output(self, discord_id):
-        # read process output and update screen
         if discord_id not in self.sessions:
             return
-        
+
         session = self.sessions[discord_id]
         process = session["process"]
         screen = session["screen"]
-        
+
         try:
             while session["active"]:
                 try:
@@ -295,30 +298,34 @@ class Shell(commands.Cog):
                         process.stdout.read(4096),
                         timeout=0.05
                     )
-                    
+
                     if not chunk:
                         break
                     
                     text = chunk.decode('utf-8', errors='replace')
-                    self._process_output(screen, text)
-                    
+                    bell_triggered = self._process_output(screen, text)
+
                     current = asyncio.get_event_loop().time()
                     if current - session["last_update"] > 0.1:
-                        await self._update(discord_id)
+                        await self._update(discord_id, flash=bell_triggered)
                         session["last_update"] = current
-                    
+                    elif bell_triggered:
+                        await self._update(discord_id, flash=True)
+                        session["last_update"] = current
+
                 except asyncio.TimeoutError:
                     continue
-                    
+
         except Exception:
             if discord_id in self.sessions:
                 self.sessions[discord_id]["active"] = False
-    
+
     def _process_output(self, screen, text):
         i = 0
+        bell_triggered = False
         while i < len(text):
             char = text[i]
-            
+
             if char == '\r':
                 screen.carriage_return()
             elif char == '\n':
@@ -328,13 +335,13 @@ class Shell(commands.Cog):
             elif char == '\x1b':
                 seq_len = self._handle_escape(screen, text[i:])
                 i += seq_len - 1
-            elif char == '\x07':  # bell
+            elif char == '\x07':
+                bell_triggered = True
+            elif char == '\x0e':
                 pass
-            elif char == '\x0e':  # shift out
+            elif char == '\x0f':
                 pass
-            elif char == '\x0f':  # shift in
-                pass
-            elif char == '\x00':  # null
+            elif char == '\x00':
                 pass
             elif ord(char) >= 32 or char == '\t':
                 if char == '\t':
@@ -343,9 +350,11 @@ class Shell(commands.Cog):
                         screen.write_char(' ')
                 else:
                     screen.write_char(char)
-            
+
             i += 1
-    
+
+        return bell_triggered
+
     def _handle_escape(self, screen, text):
         # handle ANSI escape sequences, comment indicates the escape sequences' function/meaning
         if len(text) < 2:
@@ -470,60 +479,72 @@ class Shell(commands.Cog):
     
         return 2
     
-    async def _update(self, discord_id):
-        # update screen message
+    async def _update(self, discord_id, flash=False):
         if discord_id not in self.sessions:
             return
-        
+
         session = self.sessions[discord_id]
         screen = session["screen"]
-        
+
         lines = screen.get_display(show_cursor=True)
+
+        if flash:
+            # invert colors briefly
+            inverted_lines = []
+            for line in lines:
+                inverted_lines.append(f'\x1b[7m{line}\x1b[27m')
+            content = "```ansi\n" + "\n".join(inverted_lines) + "\n```"
+
+            try:
+                await session["screen_msg"].edit(content=content)
+                await asyncio.sleep(0.15)
+            except Exception:
+                pass
+            
         content = "```ansi\n" + "\n".join(lines) + "\n```"
-        
+
         if len(content) > 1990:
             lines = screen.get_display(show_cursor=False)
             content = "```ansi\n" + "\n".join(lines) + "\n```"
-            
+
             if len(content) > 1990:
                 truncated = []
                 current_len = 12
-                
+
                 for line in lines:
                     line_len = len(line) + 1
                     if current_len + line_len > 1980:
                         break
                     truncated.append(line)
                     current_len += line_len
-                
+
                 truncated.append("... output truncated, use [PGUP]/[PGDN] to scroll")
                 content = "```ansi\n" + "\n".join(truncated) + "\n```"
-        
+
         try:
             await session["screen_msg"].edit(content=content)
         except discord.errors.NotFound:
             session["active"] = False
         except Exception:
             pass
-            
+        
     @commands.Cog.listener()
     async def on_message(self, message):
-        # handle input in interactive shell
         if message.author.bot:
             return
-        
+
         discord_id = str(message.author.id)
-        
+
         if discord_id not in self.sessions:
             return
-        
+
         session = self.sessions[discord_id]
-        
+
         if not session["active"] or message.channel.id != session["channel"]:
             return
-        
+
         content = message.content
-        
+
         if content == '[EXIT]':
             process = session["process"]
             process.terminate()
@@ -531,42 +552,49 @@ class Shell(commands.Cog):
                 await asyncio.wait_for(process.wait(), timeout=2.0)
             except Exception:
                 process.kill()
-            
+
             screen = session["screen"]
             screen.clear()
-            
+
             text = "shell session closed"
             row = screen.height // 2
             col = (screen.width - len(text)) // 2
-            
+
             screen.move_cursor(x=col, y=row)
             for char in text:
                 screen.write_char(char)
-            
+
             lines = screen.get_display(show_cursor=False)
             content = "```ansi\n" + "\n".join(lines) + "\n```"
-            
+
             try:
                 await session["screen_msg"].edit(content=content)
             except Exception:
                 pass
             
             del self.sessions[discord_id]
-            
+
             try:
                 await message.delete()
             except Exception:
                 pass
             return
-        
+
         try:
             await message.delete()
         except Exception:
             pass
         
+        # check achievements for raw command
+        ach_cog = self.bot.get_cog("Achievements")
+        if ach_cog:
+            # we dont know exit code yet, so pass None
+            await ach_cog.check_command_achievement(
+                discord_id, content, None, message.guild, message.channel
+            )
+
         process = session["process"]
-        
-        # translate special input sequences
+
         translated = content
         translated = translated.replace('[<]', '\b')
         translated = re.sub(r'\[<(\d+)\]', lambda m: '\b' * int(m.group(1)), translated)
@@ -583,7 +611,7 @@ class Shell(commands.Cog):
         translated = translated.replace('[PGUP]', '\x1b[5~')
         translated = translated.replace('[PGDN]', '\x1b[6~')
         translated = translated.replace('[]', '\n')
-        
+
         if '[^]' in translated:
             parts = translated.split('[^]')
             for i in range(1, len(parts)):
@@ -594,7 +622,7 @@ class Shell(commands.Cog):
                     elif first.isalpha():
                         parts[i] = chr(ord(first.upper()) - 64) + parts[i][1:]
             translated = ''.join(parts)
-        
+
         if '[#]' in translated:
             parts = translated.split('[#]')
             result = [parts[0]]
@@ -602,7 +630,7 @@ class Shell(commands.Cog):
                 if part:
                     result.append(part[0].upper() + part[1:])
             translated = ''.join(result)
-        
+
         try:
             process.stdin.write(translated.encode('utf-8'))
             await process.stdin.drain()

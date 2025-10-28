@@ -156,13 +156,40 @@ class AchCommands(commands.Cog):
     @commands.command(aliases=['achs', 'achievement', 'ach', 'quests'])
     async def achievements(self, ctx, *args):
         if not args:
+            # show only user's achievements
+            user_id = str(ctx.author.id)
+            user_achs = self.user_achievements.get(user_id, [])
+            xp = self.user_xp.get(user_id, 0)
+            level, current_xp, xp_needed = self.get_level(xp)
+            
+            if not user_achs:
+                await ctx.send(f"**{ctx.author.display_name}s achievements**\nlevel {level} | {current_xp}/{xp_needed} xp\n\nno achievements unlocked yet")
+                return
+            
+            msg = f"**{ctx.author.display_name}s achievements**\n"
+            msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
+            msg += f"**unlocked: {len(user_achs)}**\n\n"
+            
+            for ach_id in user_achs:
+                if ach_id not in config.ACHIEVEMENTS:
+                    continue
+                ach = config.ACHIEVEMENTS[ach_id]
+                msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+            
+            await ctx.send(msg)
+            return
+        
+        if args[0] in ["-a", "--all"]:
+            # show all achievements with spoilers
             user_id = str(ctx.author.id)
             user_achs = self.user_achievements.get(user_id, [])
             xp = self.user_xp.get(user_id, 0)
             level, current_xp, xp_needed = self.get_level(xp)
             
             visible_count = sum(1 for ach_id in config.ACHIEVEMENTS 
-                              if self.should_show(ach_id, ach_id in user_achs))
+                              if config.ACHIEVEMENTS[ach_id]["rarity"] not in ["master", "legendary"])
+            visible_count += sum(1 for ach_id in user_achs 
+                               if ach_id in config.ACHIEVEMENTS and config.ACHIEVEMENTS[ach_id]["rarity"] in ["master", "legendary"])
             
             msg = f"**{ctx.author.display_name}s achievements**\n"
             msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
@@ -172,17 +199,15 @@ class AchCommands(commands.Cog):
                 ach = config.ACHIEVEMENTS[ach_id]
                 user_has = ach_id in user_achs
                 
-                if not self.should_show(ach_id, user_has):
+                # dont show master/legendary unless unlocked
+                if ach["rarity"] in ["master", "legendary"] and not user_has:
                     continue
                 
                 if user_has:
-                    if ach["rarity"] in ["master", "legendary"]:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n"
-                    else:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                    msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
                 else:
                     if ach["rarity"] == "rare":
-                        msg += f"`☆` **hidden achievement** ({ach['rarity']})\n"
+                        msg += f"`☆` ||**{ach['name']}**|| ({ach['rarity']})\n  ⋱ ||{ach['description']}||\n"
                     else:
                         msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
             
@@ -211,7 +236,7 @@ class AchCommands(commands.Cog):
                 if aid == achievement_name or adata["name"].lower() == achievement_name.lower():
                     ach_id = aid
                     break
-            
+                
             if not ach_id:
                 await ctx.send(f"achievement not found: {achievement_name}")
                 return
@@ -241,7 +266,7 @@ class AchCommands(commands.Cog):
                 if aid == achievement_name or adata["name"].lower() == achievement_name.lower():
                     ach_id = aid
                     break
-            
+                
             if not ach_id:
                 await ctx.send(f"achievement not found: {achievement_name}")
                 return
@@ -265,30 +290,19 @@ class AchCommands(commands.Cog):
             xp = self.user_xp.get(user_id, 0)
             level, current_xp, xp_needed = self.get_level(xp)
             
-            visible_count = sum(1 for ach_id in config.ACHIEVEMENTS 
-                              if self.should_show(ach_id, ach_id in user_achs))
+            if not user_achs:
+                await ctx.send(f"**{member.display_name}s achievements**\nlevel {level} | {current_xp}/{xp_needed} xp\n\nno achievements unlocked yet")
+                return
             
             msg = f"**{member.display_name}s achievements**\n"
             msg += f"level {level} | {current_xp}/{xp_needed} xp\n\n"
-            msg += f"**unlocked: {len(user_achs)}/{visible_count}**\n\n"
+            msg += f"**unlocked: {len(user_achs)}**\n\n"
             
-            for ach_id in config.ACHIEVEMENTS:
-                ach = config.ACHIEVEMENTS[ach_id]
-                user_has = ach_id in user_achs
-                
-                if not self.should_show(ach_id, user_has):
+            for ach_id in user_achs:
+                if ach_id not in config.ACHIEVEMENTS:
                     continue
-                
-                if user_has:
-                    if ach["rarity"] in ["master", "legendary"]:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n"
-                    else:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
-                else:
-                    if ach["rarity"] == "rare":
-                        msg += f"`☆` **hidden achievement** ({ach['rarity']})\n"
-                    else:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                ach = config.ACHIEVEMENTS[ach_id]
+                msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
             
             await ctx.send(msg)
     
