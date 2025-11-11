@@ -12,29 +12,49 @@ from markdownify import markdownify as md
 
 DISCORD_MSG_LIMIT = 2000
 EMBED_DESC_LIMIT = 4096
-HEADERS = {
-    "User-Agent": "hazelrun/b0.9 (contact: skyykiwi@gmail.com)"
-}
+HEADERS = {"User-Agent": "hazelrun/b0.9 (contact: skyykiwi@gmail.com)"}
+
 
 class WikipediaFlags:
     def __init__(self):
         p = argparse.ArgumentParser(prog="wp", add_help=False)
-        p.add_argument("-l", "--lang", type=str, help="two-letter language code (en, ja, ...)")
-        p.add_argument("-t", "--type", choices=("text","embed","container"), default="embed",
-                       help="output style")
-        p.add_argument("-i", "--image", dest="image", type=str, help="true/false include thumbnail")
+        p.add_argument(
+            "-l", "--lang", type=str, help="two-letter language code (en, ja, ...)"
+        )
+        p.add_argument(
+            "-t",
+            "--type",
+            choices=("text", "embed", "container"),
+            default="embed",
+            help="output style",
+        )
+        p.add_argument(
+            "-i", "--image", dest="image", type=str, help="true/false include thumbnail"
+        )
         p.add_argument("--link", dest="link", type=str, help="true/false include link")
-        p.add_argument("-s", "--search", dest="search", type=str, help="search text inside page and show that section")
-        p.add_argument("--max", dest="max_chars", type=int, default=1200, help="max chars for text output")
+        p.add_argument(
+            "-s",
+            "--search",
+            dest="search",
+            type=str,
+            help="search text inside page and show that section",
+        )
+        p.add_argument(
+            "--max",
+            dest="max_chars",
+            type=int,
+            default=1200,
+            help="max chars for text output",
+        )
         self.parser = p
 
     def _parse_bool(self, v):
         if v is None:
             return None
         s = str(v).lower()
-        if s in ("1","true","yes","y","on"):
+        if s in ("1", "true", "yes", "y", "on"):
             return True
-        if s in ("0","false","no","n","off"):
+        if s in ("0", "false", "no", "n", "off"):
             return False
         return None
 
@@ -45,6 +65,7 @@ class WikipediaFlags:
         ns.link = self._parse_bool(ns.link)
         leftover = " ".join(extras).strip()
         return ns, leftover
+
 
 class Wikipedia(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -78,18 +99,22 @@ class Wikipedia(commands.Cog):
 
     def extract_sections(self, html: str):
         soup = BeautifulSoup(html, "lxml")
-        for bad in soup.select("script, style, link, nav, .references, .mw-references-wrap"):
+        for bad in soup.select(
+            "script, style, link, nav, .references, .mw-references-wrap"
+        ):
             bad.decompose()
 
         main = soup.find(id="mw-content-text") or soup.body or soup
 
         from bs4 import Tag
+
         if not isinstance(main, Tag):
             main = BeautifulSoup(str(main), "lxml")
 
         sections = []
         lead_parts = []
         from bs4 import Tag
+
         for child in list(main.children):
             if isinstance(child, Tag) and child.name == "h2":
                 break
@@ -118,7 +143,11 @@ class Wikipedia(commands.Cog):
     def choose_section_by_search(self, sections, needle: str):
         needle_l = needle.lower()
         for heading, lvl, html in sections:
-            text = (heading or "") + " " + BeautifulSoup(html, "lxml").get_text(" ", strip=True)
+            text = (
+                (heading or "")
+                + " "
+                + BeautifulSoup(html, "lxml").get_text(" ", strip=True)
+            )
             if needle_l in text.lower():
                 return heading, lvl, html
         return sections[0] if sections else (None, 0, "")
@@ -160,7 +189,9 @@ class Wikipedia(commands.Cog):
         page_url = f"https://{lang}.wikipedia.org/wiki/{title}"
         if summary:
             thumbnail = summary.get("thumbnail", {}).get("source")
-            page_url = summary.get("content_urls", {}).get("desktop", {}).get("page", page_url)
+            page_url = (
+                summary.get("content_urls", {}).get("desktop", {}).get("page", page_url)
+            )
             page_title = summary.get("title", page)
             lead_extract = summary.get("extract", "")
         else:
@@ -175,7 +206,9 @@ class Wikipedia(commands.Cog):
             sections = self.extract_sections(html)
 
             if ns.search:
-                heading, lvl, frag_html = self.choose_section_by_search(sections, ns.search)
+                heading, lvl, frag_html = self.choose_section_by_search(
+                    sections, ns.search
+                )
                 md = self.html_to_markdown(frag_html or "", max_chars=ns.max_chars)
                 header_line = f"**{heading}**\n\n" if heading else ""
                 out_text = header_line + md
@@ -185,7 +218,9 @@ class Wikipedia(commands.Cog):
                 else:
                     for h, frag in sections:
                         if frag and BeautifulSoup(frag, "lxml").get_text(strip=True):
-                            out_text = self.html_to_markdown(frag, max_chars=ns.max_chars)
+                            out_text = self.html_to_markdown(
+                                frag, max_chars=ns.max_chars
+                            )
                             break
                     else:
                         out_text = ""
@@ -202,58 +237,81 @@ class Wikipedia(commands.Cog):
                 pieces.append(f"<{page_url}>")
             if want_image and thumbnail:
                 pieces.append(f"[thumbnail] {thumbnail}")
-                
+
             final = "\n\n".join(pieces)
             if len(final) > DISCORD_MSG_LIMIT:
-                final = final[:DISCORD_MSG_LIMIT-10] + "\n\n... (truncated)"
+                final = final[: DISCORD_MSG_LIMIT - 10] + "\n\n... (truncated)"
             await ctx.send(final)
             return
 
         if out_type == "embed":
             desc = out_text or ""
             if len(desc) > EMBED_DESC_LIMIT:
-                desc = desc[:EMBED_DESC_LIMIT-50] + "\n\n... (truncated)"
-            emb = discord.Embed(title=f"wikipedia ({lang}): {page_title}", description=desc, url=page_url)
+                desc = desc[: EMBED_DESC_LIMIT - 50] + "\n\n... (truncated)"
+            emb = discord.Embed(
+                title=f"wikipedia ({lang}): {page_title}",
+                description=desc,
+                url=page_url,
+            )
             if want_image and thumbnail:
                 emb.set_thumbnail(url=thumbnail)
             await ctx.send(embed=emb)
             return
 
         if out_type == "container":
+
             class Components(LayoutView):
-                def __init__(self, lang, page_title, out_text, page_url, want_image, thumbnail):
+                def __init__(
+                    self, lang, page_title, out_text, page_url, want_image, thumbnail
+                ):
                     super().__init__(timeout=None)
                     container = Container(
                         TextDisplay(content=f"## {page_title}"),
-                        TextDisplay(content=f"-# From [Wikipedia](https://en.wikipedia.org/wiki/Wikipedia), the free encyclopedia. ({lang})"),
+                        TextDisplay(
+                            content=f"-# From [Wikipedia](https://en.wikipedia.org/wiki/Wikipedia), the free encyclopedia. ({lang})"
+                        ),
                         Separator(visible=True, spacing=SeparatorSpacing.large),
                         TextDisplay(content=f"{out_text}"),
                         Separator(visible=True, spacing=SeparatorSpacing.small),
-                        TextDisplay(content=f"-# read the full article here: {page_url}\n"),
+                        TextDisplay(
+                            content=f"-# read the full article here: {page_url}\n"
+                        ),
                     )
                     if want_image and thumbnail:
-                        container.add_item(MediaGallery(
-                            MediaGalleryItem(media=thumbnail),
-                        ))
+                        container.add_item(
+                            MediaGallery(
+                                MediaGalleryItem(media=thumbnail),
+                            )
+                        )
                     self.add_item(container)
-                
-                async def on_error(self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item) -> None:
+
+                async def on_error(
+                    self,
+                    interaction: discord.Interaction,
+                    error: Exception,
+                    item: discord.ui.Item,
+                ) -> None:
                     self.stop()
-                    
-            view = Components(lang, page_title, out_text, page_url, want_image, thumbnail)
-            await ctx.send(view=view)   
+
+            view = Components(
+                lang, page_title, out_text, page_url, want_image, thumbnail
+            )
+            await ctx.send(view=view)
 
     @commands.command(name="wp")
     async def wp_cmd(self, ctx: commands.Context, *, raw: str = ""):
         ns, leftover = self.flags.parse(raw or "")
         if not raw:
-            await ctx.send("usage: >wp [-l lang] [-t text|embed|container] [-i true|false] [--link true|false] [-s search] page")
+            await ctx.send(
+                "usage: >wp [-l lang] [-t text|embed|container] [-i true|false] [--link true|false] [-s search] page"
+            )
             return
         toks = leftover.split()
         if toks and len(toks[0]) == 2 and ns.lang is None:
             ns.lang = toks[0]
             leftover = " ".join(toks[1:]).strip()
         await self._handle(ctx, ns.lang or "en", leftover, ns)
+
 
 @commands.Cog.listener()
 async def on_message(self, message):
@@ -264,16 +322,17 @@ async def on_message(self, message):
     if ctx.valid:
         return
 
-    m = re.match(r'^(?P<lang>[a-z]{2})wp\b(?:\s+(?P<rest>.+))?', message.content, re.I)
+    m = re.match(r"^(?P<lang>[a-z]{2})wp\b(?:\s+(?P<rest>.+))?", message.content, re.I)
     if not m:
         return
 
     lang = m.group("lang").lower()
     rest = m.group("rest") or ""
-    if not re.search(r'(^|\s)(-l|--lang)\b', rest):
+    if not re.search(r"(^|\s)(-l|--lang)\b", rest):
         rest = f"-l {lang} {rest}".strip()
     ns, leftover = self.flags.parse(rest)
     await self._handle(ctx, ns.lang or lang, leftover, ns)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Wikipedia(bot))
