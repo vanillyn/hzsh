@@ -7,5 +7,6 @@ RUN pacman -Syu --noconfirm && \
 RUN useradd -m -s /bin/bash default
 
 WORKDIR /home/default
+COPY "./hazelrun/bin/upload" "/usr/bin/upload"
 
 CMD ["/bin/bash"]
