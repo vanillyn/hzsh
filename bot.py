@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import platform
 import random
 
 import discord
+import psutil
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
@@ -17,29 +19,32 @@ intents.presences = True
 
 bot = commands.Bot(command_prefix=">", intents=intents, help_command=None)
 
-STATUS_LIST = [
-    {"type": "playing", "name": "in Arch Linux"},
-    {"type": "playing", "name": "with /dev/null"},
-    {"type": "playing", "name": "in the terminal"},
-    {"type": "listening", "name": "kernel messages"},
-    {"type": "listening", "name": "system calls"},
-    {"type": "listening", "name": "grep output"},
-    {"type": "watching", "name": "processes"},
-    {"type": "watching", "name": "/var/log"},
-    {"type": "watching", "name": "system resources"},
-]
+
+def get_status():
+    cpu_usage = psutil.cpu_percent(interval=1)
+    memory = psutil.virtual_memory()
+    memory_usage = memory.percent
+    system = platform.system()
+    release = platform.release()
+
+    return [
+        f"using {cpu_usage}% cpu",
+        f"using {memory_usage}% memory",
+        f"kernel: {system} {release}",
+        "listening to journalctl",
+        "playing in the terminal",
+        "watching system resources",
+        "super rare status!",
+        "the very best discord server",
+    ]
 
 
 @tasks.loop(minutes=10)
 async def rotate_status():
+    STATUS_LIST = get_status()
     status = random.choice(STATUS_LIST)
-    activity_type = {
-        "playing": discord.ActivityType.playing,
-        "listening": discord.ActivityType.listening,
-        "watching": discord.ActivityType.watching,
-    }.get(status["type"], discord.ActivityType.playing)
-
-    activity = discord.Activity(type=activity_type, name=status["name"])
+    activity_type = discord.ActivityType.playing
+    activity = discord.Activity(type=activity_type, name=status)
     await bot.change_presence(activity=activity, status=discord.Status.idle)
 
 
