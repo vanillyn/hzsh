@@ -29,6 +29,7 @@ USERMOD_MAPPINGS = {
         "other": "/ other",
         "ask": "ask / me",
         "askme": "ask / me",
+        "any": "/ any",
     },
     "proficiency": {
         "new": "\\ new to computer science",

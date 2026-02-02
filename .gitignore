@@ -64,3 +64,4 @@ hazelrun/
 # Virtual environment
 venv/
 data/
+backups/
