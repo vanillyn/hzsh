@@ -153,7 +153,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "ban" if not parsed["dry_run"] else "ban (dry run)",
+                    "ban" if not parsed["dry_run"] else "ban",
                     reason,
                     duration=duration_seconds,
                     dm_sent=dm_sent,
@@ -163,7 +163,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "ban" if not parsed["dry_run"] else "ban (dry run)",
+                        "ban" if not parsed["dry_run"] else "ban",
                         ctx.author,
                         member,
                         reason,
@@ -189,7 +189,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                 if duration_seconds
                 else ""
             )
-            prefix = "[dry run] " if parsed["dry_run"] else ""
+            prefix = "[ TEST ] " if parsed["dry_run"] else ""
             if success_count == 1:
                 await ctx.send(
                     f"{prefix}banned {valid_members[0].mention}{duration_text}"
@@ -248,7 +248,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "kick" if not parsed["dry_run"] else "kick (dry run)",
+                    "kick" if not parsed["dry_run"] else "kick",
                     reason,
                     dm_sent=dm_sent,
                 )
@@ -257,7 +257,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "kick" if not parsed["dry_run"] else "kick (dry run)",
+                        "kick" if not parsed["dry_run"] else "kick",
                         ctx.author,
                         member,
                         reason,
@@ -273,7 +273,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                 await ctx.send(f"failed to kick {member.mention}: {e}")
 
         if success_count > 0:
-            prefix = "[dry run] " if parsed["dry_run"] else ""
+            prefix = "[ TEST ] " if parsed["dry_run"] else ""
             if success_count == 1:
                 await ctx.send(f"{prefix}kicked {valid_members[0].mention}")
             else:
@@ -354,7 +354,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "mute" if not parsed["dry_run"] else "mute (dry run)",
+                    "mute" if not parsed["dry_run"] else "mute",
                     reason,
                     duration=duration_seconds,
                     dm_sent=dm_sent,
@@ -364,7 +364,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "mute" if not parsed["dry_run"] else "mute (dry run)",
+                        "mute" if not parsed["dry_run"] else "mute",
                         ctx.author,
                         member,
                         reason,
@@ -401,7 +401,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                 if duration_seconds
                 else ""
             )
-            prefix = "[dry run] " if parsed["dry_run"] else ""
+            prefix = "[ TEST ] " if parsed["dry_run"] else ""
             if success_count == 1:
                 await ctx.send(
                     f"{prefix}muted {valid_members[0].mention}{duration_text}"

@@ -297,7 +297,7 @@ async def confirm_action(
 
     target_names = ", ".join(f"**{t.name}**" for t in targets)
 
-    prefix = "[DRY RUN] " if dry_run else ""
+    prefix = "[ TEST ] " if dry_run else ""
 
     if len(targets) == 1:
         msg = f"{prefix}{action} {target_names}"

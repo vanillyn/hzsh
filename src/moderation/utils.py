@@ -92,7 +92,7 @@ class ModerationHelper:
         }
 
         embed = discord.Embed(
-            title=f"moderation action: {action_type}",
+            title=f"case #{infraction_id}: {action_type}",
             color=color_map.get(action_type, discord.Color.blurple()),
             timestamp=datetime.utcnow(),
         )
