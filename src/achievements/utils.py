@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 import discord
@@ -12,6 +13,8 @@ class AchievementSystem:
         self.achievements = self.dm.load("achievements", {})
         self.xp = self.dm.load("xp", {})
         self.message_counts = self.dm.load("message_counts", {})
+        self.reaction_counts = self.dm.load("reaction_counts", {})
+        self.last_message = self.dm.load("last_message", {})
 
     def get_level(self, xp: int) -> Tuple[int, int, int]:
         level = 1
@@ -26,7 +29,6 @@ class AchievementSystem:
         return level, current_xp, xp_needed
 
     def has_achievement(self, user_id: str, achievement_id: str) -> bool:
-        """check if user has specific achievement"""
         user_id = str(user_id)
         return achievement_id in self.achievements.get(user_id, [])
 
@@ -37,13 +39,11 @@ class AchievementSystem:
         return self.xp.get(str(user_id), 0)
 
     def get_message_count(self, user_id: str, word: str) -> int:
-        """get message count for a specific word"""
         user_id = str(user_id)
         count_key = f"word_{word}"
         return self.message_counts.get(user_id, {}).get(count_key, 0)
 
     def increment_message_count(self, user_id: str, word: str) -> int:
-        """increment message count for a word"""
         user_id = str(user_id)
         count_key = f"word_{word}"
 
@@ -58,6 +58,29 @@ class AchievementSystem:
 
         return self.message_counts[user_id][count_key]
 
+    def get_reaction_count(self, user_id: str) -> int:
+        user_id = str(user_id)
+        return self.reaction_counts.get(user_id, 0)
+
+    def increment_reaction_count(self, user_id: str) -> int:
+        user_id = str(user_id)
+        if user_id not in self.reaction_counts:
+            self.reaction_counts[user_id] = 0
+        self.reaction_counts[user_id] += 1
+        self.dm.save("reaction_counts", self.reaction_counts)
+        return self.reaction_counts[user_id]
+
+    def update_last_message(self, user_id: str):
+        user_id = str(user_id)
+        self.last_message[user_id] = datetime.utcnow().isoformat()
+        self.dm.save("last_message", self.last_message)
+
+    def get_last_message(self, user_id: str) -> Optional[datetime]:
+        user_id = str(user_id)
+        if user_id not in self.last_message:
+            return None
+        return datetime.fromisoformat(self.last_message[user_id])
+
     async def grant_achievement(
         self,
         user_id: str,
@@ -65,7 +88,6 @@ class AchievementSystem:
         guild: discord.Guild,
         channel: Optional[discord.abc.Messageable] = None,
     ) -> bool:
-        """grant an achievement to a user"""
         user_id = str(user_id)
 
         if self.has_achievement(user_id, achievement_id):
@@ -112,6 +134,8 @@ class AchievementSystem:
                 if milestone_role:
                     await member.add_roles(milestone_role)
 
+        await self.check_achievement_count(user_id, guild)
+
         achievements_channel = guild.get_channel(config.ACHIEVEMENTS_CHANNEL)
         if achievements_channel:
             mention = member.mention if member else f"user {user_id}"
@@ -126,7 +150,6 @@ class AchievementSystem:
     async def revoke_achievement(
         self, user_id: str, achievement_id: str, guild: discord.Guild
     ) -> bool:
-        """revoke an achievement from a user"""
         user_id = str(user_id)
 
         if not self.has_achievement(user_id, achievement_id):
@@ -161,7 +184,6 @@ class AchievementSystem:
         guild: discord.Guild,
         channel: Optional[discord.abc.Messageable],
     ):
-        """check if command triggers any achievements"""
         for ach_id, ach_data in config.ACHIEVEMENTS.items():
             if ach_data["trigger_type"] == "command":
                 trigger = ach_data["trigger_value"]
@@ -186,7 +208,6 @@ class AchievementSystem:
     async def check_message_achievements(
         self, user_id: str, message_content: str, guild: discord.Guild
     ):
-        """check if message triggers any achievements"""
         content_lower = message_content.lower()
 
         for ach_id, ach_data in config.ACHIEVEMENTS.items():
@@ -202,7 +223,6 @@ class AchievementSystem:
     async def check_presence_achievements(
         self, member: discord.Member, activity: discord.Activity
     ):
-        """check if presence triggers any achievements"""
         if not activity:
             return
 
@@ -217,6 +237,65 @@ class AchievementSystem:
                         await self.grant_achievement(
                             str(member.id), ach_id, member.guild, None
                         )
+
+    async def check_infraction_achievement(
+        self, user_id: str, infraction_type: str, guild: discord.Guild
+    ):
+        for ach_id, ach_data in config.ACHIEVEMENTS.items():
+            if ach_data["trigger_type"] == "infraction":
+                if infraction_type in ach_data["trigger_value"]:
+                    await self.grant_achievement(str(user_id), ach_id, guild, None)
+
+    async def check_forum_post_achievement(
+        self, user_id: str, channel_id: int, guild: discord.Guild
+    ):
+        for ach_id, ach_data in config.ACHIEVEMENTS.items():
+            if ach_data["trigger_type"] == "forum_post":
+                if channel_id == ach_data["trigger_value"]:
+                    await self.grant_achievement(str(user_id), ach_id, guild, None)
+
+    async def check_achievement_count(self, user_id: str, guild: discord.Guild):
+        user_id = str(user_id)
+        ach_count = len(self.achievements.get(user_id, []))
+
+        for ach_id, ach_data in config.ACHIEVEMENTS.items():
+            if ach_data["trigger_type"] == "achievement_count":
+                if ach_count >= ach_data["trigger_value"]:
+                    await self.grant_achievement(user_id, ach_id, guild, None)
+
+    async def check_inactivity_achievement(self, user_id: str, guild: discord.Guild):
+        user_id = str(user_id)
+        last = self.get_last_message(user_id)
+
+        if not last:
+            self.update_last_message(user_id)
+            return
+
+        time_since = datetime.utcnow() - last
+
+        for ach_id, ach_data in config.ACHIEVEMENTS.items():
+            if ach_data["trigger_type"] == "inactivity":
+                required_seconds = ach_data["trigger_value"]
+                if time_since.total_seconds() >= required_seconds:
+                    await self.grant_achievement(user_id, ach_id, guild, None)
+
+        self.update_last_message(user_id)
+
+    async def check_reaction_achievements(
+        self, user_id: str, emoji: str, guild: discord.Guild
+    ):
+        user_id = str(user_id)
+        count = self.increment_reaction_count(user_id)
+
+        for ach_id, ach_data in config.ACHIEVEMENTS.items():
+            if ach_data["trigger_type"] == "reaction_count":
+                if count >= ach_data["trigger_value"]:
+                    await self.grant_achievement(user_id, ach_id, guild, None)
+
+            elif ach_data["trigger_type"] == "specific_reaction":
+                emoji_name = emoji.name if hasattr(emoji, "name") else str(emoji)
+                if ach_data["trigger_value"] in emoji_name:
+                    await self.grant_achievement(user_id, ach_id, guild, None)
 
 
 _achievement_system = None

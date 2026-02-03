@@ -6,7 +6,7 @@ NEO_POLITA = 1395939916189405325
 SHELL_ACCESS_ROLE = "> connected..."
 ACHIEVEMENTS_CHANNEL = 1429897092226351244
 
-VERSION = "2.1"
+VERSION = "2.2.0"
 
 USERMOD_MAPPINGS = {
     "pronouns": {
@@ -339,6 +339,94 @@ ACHIEVEMENTS = {
         "trigger_type": "command",
         "trigger_value": ["sudo -i", "doas -s", "su"],
         "role": "> sudoers",
+    },
+    "accessdenied": {
+        "name": "access denied",
+        "description": "try running sudo, su, or doas",
+        "rarity": "common",
+        "trigger_type": "command",
+        "trigger_value": ["sudo", "su", "doas"],
+        "role": None,
+    },
+    "rulebreaker": {
+        "name": "rule breaker",
+        "description": "be muted or warned",
+        "rarity": "common",
+        "trigger_type": "infraction",
+        "trigger_value": ["mute", "warn"],
+        "role": None,
+    },
+    "gambling": {
+        "name": "let's go gambling!!!!",
+        "description": "play Balatro or CloverPit",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": ["Balatro", "CloverPit"],
+        "role": "> let's go gambling!!!!",
+    },
+    "dreamer": {
+        "name": "why do we dream..",
+        "description": "play Honkai: Star Rail",
+        "rarity": "common",
+        "trigger_type": "presence",
+        "trigger_value": ["Honkai: Star Rail"],
+        "role": None,
+    },
+    "contributor": {
+        "name": "contribute to oss",
+        "description": "make a post in #projects",
+        "rarity": "common",
+        "trigger_type": "forum_post",
+        "trigger_value": 1429678941031108741,
+        "role": "> contributor",
+    },
+    "ricingenthusiast": {
+        "name": "check out my wallpaper",
+        "description": "make a post in #ricing",
+        "rarity": "common",
+        "trigger_type": "forum_post",
+        "trigger_value": 1429680296156073995,
+        "role": None,
+    },
+    "hazelrunner": {
+        "name": "hazel / runner",
+        "description": "get 20 achievements",
+        "rarity": "rare",
+        "trigger_type": "achievement_count",
+        "trigger_value": 20,
+        "role": "> hazel / runner",
+    },
+    "comeback": {
+        "name": "comeback",
+        "description": "do not send a message for a week, then send one",
+        "rarity": "rare",
+        "trigger_type": "inactivity",
+        "trigger_value": 604800,
+        "role": None,
+    },
+    "reactionary": {
+        "name": "reactionary",
+        "description": "react to 20 messages",
+        "rarity": "common",
+        "trigger_type": "reaction_count",
+        "trigger_value": 20,
+        "role": None,
+    },
+    "livereaction": {
+        "name": "live (user) reaction",
+        "description": "react to 50 messages",
+        "rarity": "rare",
+        "trigger_type": "reaction_count",
+        "trigger_value": 50,
+        "role": None,
+    },
+    "tororeaction": {
+        "name": ":toroplushie: REACTION - DID HE REALLY SAY XD?",
+        "description": "react with :toroplushie:",
+        "rarity": "common",
+        "trigger_type": "specific_reaction",
+        "trigger_value": "toroplushie",
+        "role": None,
     },
 }
 

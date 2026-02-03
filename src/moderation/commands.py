@@ -357,7 +357,11 @@ class ModerationCommands(CogHelper, commands.Cog):
                     duration=duration_seconds,
                     dm_sent=dm_sent,
                 )
-
+                await self.bot.get_cog(
+                    "Achievements"
+                ).ach_system.check_infraction_achievement(
+                    str(member.id), infraction.type, ctx.guild
+                )
                 if not parsed["silent"]:
                     await self.mod_helper.log_action(
                         self.bot,
@@ -447,7 +451,11 @@ class ModerationCommands(CogHelper, commands.Cog):
             infraction = self.mod_helper.create_infraction(
                 member.id, ctx.author.id, ctx.guild.id, "warn", reason, dm_sent=dm_sent
             )
-
+            await self.bot.get_cog(
+                "Achievements"
+            ).ach_system.check_infraction_achievement(
+                str(member.id), infraction.type, ctx.guild
+            )
             await self.mod_helper.log_action(
                 self.bot,
                 ctx.guild,
