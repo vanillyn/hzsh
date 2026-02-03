@@ -65,6 +65,7 @@ async def load_cogs():
         "src.commands.man",
         "src.commands.usermod",
         "src.commands.wikipedia",
+        "src.commands.cookies",
         "src.moderation.commands",
         "src.moderation.tickets",
         "src.moderation.userinfo",

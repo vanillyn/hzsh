@@ -116,6 +116,62 @@ USERMOD_CATEGORIES = {
 }
 
 ACHIEVEMENTS = {
+    "haveacookie": {
+        "name": "have a cookie",
+        "description": "say thank you or give a cookie to someone",
+        "rarity": "common",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": None,
+    },
+    "haveacookietray": {
+        "name": "have a cookie tray",
+        "description": "say thank you or give cookies 20 times",
+        "rarity": "rare",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": "> cookie giver",
+    },
+    "haveacookiemachine": {
+        "name": "have a cookie machine",
+        "description": "say thank you or give cookies 100 times",
+        "rarity": "rare",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": None,
+    },
+    "yay": {
+        "name": "yay :3",
+        "description": "get your first cookie",
+        "rarity": "common",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": None,
+    },
+    "cookietray": {
+        "name": "cookie tray",
+        "description": "receive 20 cookies total",
+        "rarity": "rare",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": "> cookie hoarder",
+    },
+    "cookiemachine": {
+        "name": "cookie machine",
+        "description": "receive 100 cookies total",
+        "rarity": "rare",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": None,
+    },
+    "bakery": {
+        "name": "bakery",
+        "description": "get 1 cake",
+        "rarity": "legendary",
+        "trigger_type": "manual",
+        "trigger_value": None,
+        "role": "> bakery",
+    },
     "echo": {
         "name": "hello hello hello hello world world world world world",
         "description": "run the echo command",
@@ -139,14 +195,6 @@ ACHIEVEMENTS = {
         "trigger_type": "nonzero_exit",
         "trigger_value": None,
         "role": "> bot breaker",
-    },
-    "central": {
-        "name": "...",
-        "description": "find a secret file in a familiar directory.",
-        "rarity": "master",
-        "trigger_type": "file_read",
-        "trigger_value": "/.c/n/s",
-        "role": "> perceptive",
     },
     "neopolita": {
         "name": "neo / polita",
@@ -213,7 +261,7 @@ ACHIEVEMENTS = {
         "role": None,
     },
     "whatdidyousay": {
-        "name": "what did you say?",
+        "name": "wuf :3",
         "description": "send 20 messages containing the word woof",
         "rarity": "common",
         "trigger_type": "message_count",
@@ -251,14 +299,6 @@ ACHIEVEMENTS = {
         "trigger_type": "message_count",
         "trigger_value": (":toroplushie:", 20),
         "role": "> XD",
-    },
-    "lost": {
-        "name": "lost...",
-        "description": "you're late, but you can still bring us silence.",
-        "rarity": "master",
-        "trigger_type": "message_count",
-        "trigger_value": ("forest", 20),
-        "role": "> lost...",
     },
     "thestart": {
         "name": "the start",
@@ -299,14 +339,6 @@ ACHIEVEMENTS = {
         "trigger_type": "command",
         "trigger_value": ["sudo -i", "doas -s", "su"],
         "role": "> sudoers",
-    },
-    "baller": {
-        "name": "baller",
-        "description": "solve the hzconnect puzzle",
-        "rarity": "legendary",
-        "trigger_type": "puzzle",
-        "trigger_value": None,
-        "role": "> baller",
     },
 }
 
