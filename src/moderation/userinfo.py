@@ -1,10 +1,9 @@
-from datetime import datetime
-
 import discord
 from discord.ext import commands
 
 from ..misc.db import Infraction, format_timestamp, get_session
 from ..misc.utils import CogHelper
+from .cmdutils import ModCommandParser
 from .utils import ModerationHelper, is_mod
 
 
@@ -12,75 +11,63 @@ class UserInfo(CogHelper, commands.Cog):
     def __init__(self, bot):
         super().__init__(bot)
         self.mod_helper = ModerationHelper()
+        self.parser = ModCommandParser()
 
     @commands.command(aliases=["whois", "user", "ui"])
-    async def userinfo(self, ctx, member: discord.Member = None):
+    async def userinfo(self, ctx, target: str = None):
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
-        target = member or ctx.author
+        if target:
+            members = await self.parser.resolve_users(ctx, [target])
+            if not members:
+                await ctx.send("user not found")
+                return
+            member = members[0]
+        else:
+            member = ctx.author
 
-        embed = discord.Embed(
-            title=f"user information: {target.name}",
-            color=target.color
-            if target.color != discord.Color.default()
-            else discord.Color.blurple(),
-            timestamp=datetime.utcnow(),
-        )
+        msg = f"**user information: {member.name}**\n\n"
 
-        embed.set_thumbnail(url=target.display_avatar.url)
+        msg += f"**id:** {member.id}\n"
+        msg += f"**mention:** {member.mention}\n"
+        msg += f"**bot:** {'yes' if member.bot else 'no'}\n"
+        msg += f"**nickname:** {member.nick if member.nick else 'none'}\n\n"
 
-        embed.add_field(
-            name="basic info",
-            value=f"**id:** {target.id}\n"
-            f"**mention:** {target.mention}\n"
-            f"**bot:** {'yes' if target.bot else 'no'}\n"
-            f"**nickname:** {target.nick if target.nick else 'none'}",
-            inline=False,
-        )
+        msg += f"**created:** {format_timestamp(member.created_at)} ({format_timestamp(member.created_at, relative=True)})\n"
+        msg += f"**joined:** {format_timestamp(member.joined_at)} ({format_timestamp(member.joined_at, relative=True)})\n\n"
 
-        embed.add_field(
-            name="dates",
-            value=f"**created:** {format_timestamp(target.created_at)} ({format_timestamp(target.created_at, relative=True)})\n"
-            f"**joined:** {format_timestamp(target.joined_at)} ({format_timestamp(target.joined_at, relative=True)})",
-            inline=False,
-        )
-
-        if len(target.roles) > 1:
+        if len(member.roles) > 1:
             roles = [
                 role.mention
-                for role in reversed(target.roles)
+                for role in reversed(member.roles)
                 if role != ctx.guild.default_role
             ]
             role_text = ", ".join(roles[:10])
-            if len(target.roles) > 11:
-                role_text += f" (+{len(target.roles) - 11} more)"
+            if len(member.roles) > 11:
+                role_text += f" (+{len(member.roles) - 11} more)"
 
-            embed.add_field(
-                name=f"roles [{len(target.roles) - 1}]", value=role_text, inline=False
-            )
+            msg += f"**roles [{len(member.roles) - 1}]**\n{role_text}\n\n"
 
         key_perms = []
-        if target.guild_permissions.administrator:
+        if member.guild_permissions.administrator:
             key_perms.append("administrator")
-        if target.guild_permissions.manage_guild:
+        if member.guild_permissions.manage_guild:
             key_perms.append("manage server")
-        if target.guild_permissions.manage_roles:
+        if member.guild_permissions.manage_roles:
             key_perms.append("manage roles")
-        if target.guild_permissions.manage_channels:
+        if member.guild_permissions.manage_channels:
             key_perms.append("manage channels")
-        if target.guild_permissions.kick_members:
+        if member.guild_permissions.kick_members:
             key_perms.append("kick members")
-        if target.guild_permissions.ban_members:
+        if member.guild_permissions.ban_members:
             key_perms.append("ban members")
 
         if key_perms:
-            embed.add_field(
-                name="key permissions", value=", ".join(key_perms), inline=False
-            )
+            msg += f"**key permissions**\n{', '.join(key_perms)}\n\n"
 
-        if target.activity:
+        if member.activity:
             activity_type = {
                 discord.ActivityType.playing: "playing",
                 discord.ActivityType.streaming: "streaming",
@@ -88,21 +75,19 @@ class UserInfo(CogHelper, commands.Cog):
                 discord.ActivityType.watching: "watching",
                 discord.ActivityType.custom: "status",
                 discord.ActivityType.competing: "competing in",
-            }.get(target.activity.type, "")
+            }.get(member.activity.type, "")
 
-            activity_name = target.activity.name
-            if isinstance(target.activity, discord.Spotify):
-                activity_name = f"{target.activity.title} by {target.activity.artist}"
+            activity_name = member.activity.name
+            if isinstance(member.activity, discord.Spotify):
+                activity_name = f"{member.activity.title} by {member.activity.artist}"
 
-            embed.add_field(
-                name="activity", value=f"{activity_type} {activity_name}", inline=False
-            )
+            msg += f"**activity**\n{activity_type} {activity_name}\n\n"
 
         session = get_session()
         try:
             infractions = (
                 session.query(Infraction)
-                .filter_by(user_id=target.id, guild_id=ctx.guild.id)
+                .filter_by(user_id=member.id, guild_id=ctx.guild.id)
                 .all()
             )
 
@@ -113,59 +98,50 @@ class UserInfo(CogHelper, commands.Cog):
                 kicks = sum(1 for i in infractions if i.type == "kick")
                 bans = sum(1 for i in infractions if i.type == "ban")
 
-                mod_text = f"**total:** {len(infractions)} ({active} active)\n"
-                mod_text += f"**warns:** {warns} | **mutes:** {mutes}\n"
-                mod_text += f"**kicks:** {kicks} | **bans:** {bans}"
+                msg += "**moderation history**\n"
+                msg += f"total: {len(infractions)} ({active} active)\n"
+                msg += f"warns: {warns} | mutes: {mutes}\n"
+                msg += f"kicks: {kicks} | bans: {bans}\n"
 
                 latest = max(infractions, key=lambda x: x.created_at)
-                mod_text += f"\n**latest:** {latest.type} - {format_timestamp(latest.created_at, relative=True)}"
-
-                embed.add_field(
-                    name=" moderation history", value=mod_text, inline=False
-                )
+                msg += f"latest: {latest.type} - {format_timestamp(latest.created_at, relative=True)}\n\n"
         finally:
             session.close()
 
-        if target.premium_since:
-            embed.add_field(
-                name="server booster",
-                value=f"boosting since {format_timestamp(target.premium_since, relative=True)}",
-                inline=False,
-            )
+        if member.premium_since:
+            msg += f"**server booster**\nboosting since {format_timestamp(member.premium_since, relative=True)}\n\n"
 
-        embed.set_footer(text=f"{target.status.name} • requested by {ctx.author.name}")
+        msg += f"-# {member.status.name} • requested by {ctx.author.name}"
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
     @commands.command(aliases=["avatar", "av", "pfp"])
-    async def userimage(self, ctx, member: discord.Member = None):
-        """get a user's avatar"""
-        target = member or ctx.author
+    async def userimage(self, ctx, target: str = None):
+        if target:
+            members = await self.parser.resolve_users(ctx, [target])
+            if not members:
+                await ctx.send("user not found")
+                return
+            member = members[0]
+        else:
+            member = ctx.author
 
-        embed = discord.Embed(
-            title=f"{target.name}'s avatar",
-            color=target.color
-            if target.color != discord.Color.default()
-            else discord.Color.blurple(),
-        )
-
-        embed.set_image(url=target.display_avatar.url)
-
-        avatar_url = target.display_avatar.url
+        avatar_url = member.display_avatar.url
         formats = []
-        if target.display_avatar.is_animated():
+        if member.display_avatar.is_animated():
             formats.append(f"[gif]({avatar_url.replace('.webp', '.gif')})")
         formats.append(f"[png]({avatar_url.replace('.webp', '.png')})")
         formats.append(f"[jpg]({avatar_url.replace('.webp', '.jpg')})")
         formats.append(f"[webp]({avatar_url})")
 
-        embed.description = " | ".join(formats)
+        msg = f"**{member.name}'s avatar**\n"
+        msg += " | ".join(formats)
+        msg += f"\n{avatar_url}"
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
     @commands.command()
     async def lookup(self, ctx, user_id: int):
-        """look up a user by id (mods only)"""
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
@@ -179,36 +155,19 @@ class UserInfo(CogHelper, commands.Cog):
             await ctx.send(f"error fetching user: {e}")
             return
 
-        embed = discord.Embed(
-            title=f"user lookup: {user.name}",
-            color=discord.Color.blurple(),
-            timestamp=datetime.utcnow(),
-        )
-
-        embed.set_thumbnail(url=user.display_avatar.url)
-
-        embed.add_field(
-            name="info",
-            value=f"**id:** {user.id}\n"
-            f"**name:** {user.name}\n"
-            f"**bot:** {'yes' if user.bot else 'no'}\n"
-            f"**created:** {format_timestamp(user.created_at)} ({format_timestamp(user.created_at, relative=True)})",
-            inline=False,
-        )
+        msg = f"**user lookup: {user.name}**\n\n"
+        msg += f"**id:** {user.id}\n"
+        msg += f"**name:** {user.name}\n"
+        msg += f"**bot:** {'yes' if user.bot else 'no'}\n"
+        msg += f"**created:** {format_timestamp(user.created_at)} ({format_timestamp(user.created_at, relative=True)})\n\n"
 
         member = ctx.guild.get_member(user_id)
         if member:
-            embed.add_field(
-                name="server status",
-                value=f"✅ in server\n"
-                f"**joined:** {format_timestamp(member.joined_at, relative=True)}\n"
-                f"**roles:** {len(member.roles) - 1}",
-                inline=False,
-            )
+            msg += "**server status**\nin server\n"
+            msg += f"joined: {format_timestamp(member.joined_at, relative=True)}\n"
+            msg += f"roles: {len(member.roles) - 1}\n\n"
         else:
-            embed.add_field(
-                name="server status", value="❌ not in server", inline=False
-            )
+            msg += "**server status**\n❌ not in server\n\n"
 
         session = get_session()
         try:
@@ -220,15 +179,13 @@ class UserInfo(CogHelper, commands.Cog):
 
             if infractions:
                 active = sum(1 for i in infractions if i.active)
-                embed.add_field(
-                    name="⚠️ infractions",
-                    value=f"**total:** {len(infractions)}\n**active:** {active}",
-                    inline=False,
-                )
+                msg += "**infractions**\n"
+                msg += f"total: {len(infractions)}\n"
+                msg += f"active: {active}"
         finally:
             session.close()
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
 
 async def setup(bot):

@@ -1,14 +1,11 @@
-import traceback
 from datetime import datetime
-from types import TracebackType
 
 import discord
-from discord.client import T
-from discord.errors import Forbidden
 from discord.ext import commands
 
 from ..misc.db import Ticket, get_session
 from ..misc.utils import CogHelper
+from .cmdutils import ModCommandParser
 from .utils import ModerationHelper, is_mod
 
 
@@ -16,12 +13,12 @@ class Tickets(CogHelper, commands.Cog):
     def __init__(self, bot):
         super().__init__(bot)
         self.mod_helper = ModerationHelper()
+        self.parser = ModCommandParser()
 
     async def cog_check(self, ctx):
         return ctx.guild is not None
 
     def get_ticket_by_channel(self, channel_id):
-        """get ticket by channel id"""
         session = get_session()
         try:
             return session.query(Ticket).filter_by(channel_id=channel_id).first()
@@ -29,7 +26,6 @@ class Tickets(CogHelper, commands.Cog):
             session.close()
 
     def get_ticket_by_id(self, ticket_id, guild_id):
-        """get ticket by id"""
         session = get_session()
         try:
             return (
@@ -39,7 +35,6 @@ class Tickets(CogHelper, commands.Cog):
             session.close()
 
     def get_ticket_by_name(self, name, guild_id):
-        """get ticket by name"""
         session = get_session()
         try:
             return (
@@ -52,18 +47,18 @@ class Tickets(CogHelper, commands.Cog):
 
     @commands.group(invoke_without_command=True)
     async def tickets(self, ctx):
-        help_text = """```
-ticket command help -
-tickets new [name] {@users} - create a new ticket
-tickets remove [id/name] - close and delete a ticket
-tickets modify [id/name] [add/remove|rename] [@users|newname] - modify ticket access
-tickets archive [id] - archive a ticket
-tickets list - list all tickets
-```"""
-        await ctx.send(help_text)
+        await ctx.send(
+            "```\n"
+            "tickets new [name] {@users} - create ticket\n"
+            "tickets remove [id/name] - close ticket\n"
+            "tickets modify [id/name] [add/remove|rename] [@users|newname]\n"
+            "tickets archive [id] - archive ticket\n"
+            "tickets list - list tickets\n"
+            "```"
+        )
 
     @tickets.command(name="new", aliases=["create"])
-    async def tickets_new(self, ctx, name: str, *users: discord.Member):
+    async def tickets_new(self, ctx, name: str, *raw_users):
         config = self.mod_helper.get_config(ctx.guild.id)
 
         category = None
@@ -74,6 +69,8 @@ tickets list - list all tickets
         if config.mod_role_id:
             mod_role = ctx.guild.get_role(config.mod_role_id)
 
+        users = await self.parser.resolve_users(ctx, list(raw_users))
+
         session = get_session()
         try:
             ticket_count = (
@@ -83,7 +80,6 @@ tickets list - list all tickets
             session.close()
 
         ticket_number = ticket_count + 1
-        channel_name = f"{ticket_number}-{name}"
 
         overwrites = {
             ctx.guild.default_role: discord.PermissionOverwrite(read_messages=False),
@@ -126,18 +122,13 @@ tickets list - list all tickets
                 f"{ticket_number}-{name}",
                 category=category,
                 overwrites=overwrites,
-                reason=f"Ticket created by {ctx.author.name}",
+                reason=f"ticket created by {ctx.author.name}",
             )
         except discord.Forbidden as e:
-            await ctx.send(
-                f"permission error: {traceback.print_exc()} ({e.code} - {e.text})"
-            )
+            await ctx.send(f"permission error: {e}")
             return
         except discord.HTTPException as e:
-            await ctx.send(f"[http]: {e.text} (Code: {e.code})")
-            return
-        except Exception as e:
-            await ctx.send(f"an unexpected error occurred: {e}")
+            await ctx.send(f"http error: {e}")
             return
 
         session = get_session()
@@ -156,28 +147,16 @@ tickets list - list all tickets
             session.commit()
             session.refresh(ticket)
 
-            embed = discord.Embed(
-                title=f"ticket #{ticket.id}: {name}",
-                description=f"ticket created by {ctx.author.mention}",
-                color=discord.Color.green(),
-                timestamp=datetime.utcnow(),
-            )
-
-            embed.add_field(
-                name="what happens now?",
-                value="a moderator will respond to your ticket as soon as possible.\n"
-                "please describe your issue in detail.",
-                inline=False,
-            )
+            msg = f"**ticket #{ticket.id}: {name}**\n"
+            msg += f"created by {ctx.author.mention}\n\n"
+            msg += "a moderator will respond soon.\n"
+            msg += "please describe your issue in detail.\n"
 
             if users:
                 user_mentions = ", ".join(u.mention for u in users)
-                embed.add_field(
-                    name="users with access", value=user_mentions, inline=False
-                )
+                msg += f"\nusers with access: {user_mentions}"
 
-            await channel.send(embed=embed)
-
+            await channel.send(msg)
             await ctx.send(f"created ticket {channel.mention}")
             self.log_info(f"{ctx.author.name} created ticket #{ticket.id}: {name}")
 
@@ -250,11 +229,11 @@ tickets list - list all tickets
                 await ctx.send("provide users to add")
                 return
 
-            added = []
-            for target in targets:
-                try:
-                    member = await commands.MemberConverter().convert(ctx, target)
+            members = await self.parser.resolve_users(ctx, list(targets))
 
+            added = []
+            for member in members:
+                try:
                     session = get_session()
                     try:
                         ticket = session.query(Ticket).filter_by(id=ticket.id).first()
@@ -273,7 +252,7 @@ tickets list - list all tickets
                     )
 
                     added.append(member.mention)
-                except (commands.BadArgument, discord.HTTPException):
+                except discord.HTTPException:
                     continue
 
             if added:
@@ -315,7 +294,11 @@ tickets list - list all tickets
                                 removed.append("moderators")
                         continue
 
-                    member = await commands.MemberConverter().convert(ctx, target)
+                    members = await self.parser.resolve_users(ctx, [target])
+                    if not members:
+                        continue
+
+                    member = members[0]
 
                     session = get_session()
                     try:
@@ -326,9 +309,8 @@ tickets list - list all tickets
                         session.close()
 
                     await channel.set_permissions(member, overwrite=None)
-
                     removed.append(member.mention)
-                except (commands.BadArgument, discord.HTTPException):
+                except discord.HTTPException:
                     continue
 
             if removed:
@@ -368,7 +350,6 @@ tickets list - list all tickets
 
     @tickets.command(name="archive")
     async def tickets_archive(self, ctx, ticket_id: int):
-        """archive a ticket"""
         if not is_mod(ctx.author):
             await ctx.send("only moderators can archive tickets")
             return
@@ -414,14 +395,7 @@ tickets list - list all tickets
                 session.close()
 
             await ctx.send(f"archived ticket #{ticket_id}")
-
-            embed = discord.Embed(
-                title="ticket archived",
-                description=f"this ticket has been archived by {ctx.author.mention}",
-                color=discord.Color.greyple(),
-                timestamp=datetime.utcnow(),
-            )
-            await channel.send(embed=embed)
+            await channel.send(f"ticket archived by {ctx.author.mention}")
 
             self.log_info(f"{ctx.author.name} archived ticket #{ticket_id}")
 
@@ -430,7 +404,6 @@ tickets list - list all tickets
 
     @tickets.command(name="list")
     async def tickets_list(self, ctx):
-        """list all active tickets"""
         if not is_mod(ctx.author):
             await ctx.send("only moderators can list tickets")
             return
@@ -450,11 +423,7 @@ tickets list - list all tickets
             await ctx.send("no active tickets")
             return
 
-        embed = discord.Embed(
-            title="active tickets",
-            color=discord.Color.blurple(),
-            timestamp=datetime.utcnow(),
-        )
+        msg = "**active tickets**\n\n"
 
         for ticket in tickets[:15]:
             creator = ctx.guild.get_member(ticket.creator_id)
@@ -465,18 +434,15 @@ tickets list - list all tickets
 
             from ..misc.db import format_timestamp
 
-            embed.add_field(
-                name=f"#{ticket.id}: {ticket.name}",
-                value=f"creator: {creator_name}\n"
-                f"channel: {channel_mention}\n"
-                f"created: {format_timestamp(ticket.created_at)}",
-                inline=False,
-            )
+            msg += f"**#{ticket.id}: {ticket.name}**\n"
+            msg += f"creator: {creator_name}\n"
+            msg += f"channel: {channel_mention}\n"
+            msg += f"created: {format_timestamp(ticket.created_at)}\n\n"
 
         if len(tickets) > 15:
-            embed.set_footer(text=f"showing 15 of {len(tickets)} tickets")
+            msg += f"-# showing 15 of {len(tickets)} tickets"
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
 
 async def setup(bot):

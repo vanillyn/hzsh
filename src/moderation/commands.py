@@ -1,8 +1,3 @@
-"""
-moderation commands v2
-refined command structure with confirmation system
-"""
-
 from datetime import datetime
 
 import discord
@@ -56,7 +51,6 @@ class ModerationCommands(CogHelper, commands.Cog):
             return
 
         config = self.mod_helper.get_config(ctx.guild.id)
-
         existing_session = get_mod_session(ctx.author.id, ctx.guild.id)
 
         if existing_session:
@@ -91,26 +85,29 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @commands.command()
     async def ban(self, ctx, *, args: str = ""):
-        """
-        ban {-d [duration]} {-q|-s|-p} [@user] {"reason"}
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
         if not args:
-            await ctx.send('usage: ban {-d [duration]} {-q|-s|-p} [@user] {"reason"}')
+            await ctx.send(
+                'usage: ban {-d [dur]} {-q|-s|-p|-D} [@user|id|name] {"reason"}'
+            )
             return
 
         parsed = self.parser.parse_ban(args)
-
-        members = await self.parser.convert_mentions_to_members(ctx, parsed["users"])
+        targets, reason = await self.parser.parse_targets_and_reason(
+            ctx, parsed["raw_args"]
+        )
+        members = await self.parser.resolve_users(ctx, targets)
 
         if not members:
             await ctx.send("no valid users provided")
             return
 
-        valid_members, errors = self.parser.validate_targets(members, ctx.author, "ban")
+        valid_members, errors = self.parser.validate_targets(
+            members, ctx.author, "ban", parsed["dry_run"]
+        )
 
         if errors:
             await ctx.send("\n".join(errors))
@@ -130,8 +127,9 @@ class ModerationCommands(CogHelper, commands.Cog):
             "ban",
             valid_members,
             parsed["duration"],
-            parsed["reason"],
+            reason,
             parsed["quick"],
+            parsed["dry_run"],
         )
 
         if not confirmed:
@@ -141,12 +139,12 @@ class ModerationCommands(CogHelper, commands.Cog):
         for member in valid_members:
             try:
                 dm_sent = False
-                if not parsed["silent"]:
+                if not parsed["silent"] and not parsed["dry_run"]:
                     dm_sent = await self.mod_helper.notify_user(
                         member,
                         ctx.guild,
                         "banned",
-                        parsed["reason"],
+                        reason,
                         duration_seconds,
                         ctx.author,
                     )
@@ -155,8 +153,8 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "ban",
-                    parsed["reason"],
+                    "ban" if not parsed["dry_run"] else "ban (dry run)",
+                    reason,
                     duration=duration_seconds,
                     dm_sent=dm_sent,
                 )
@@ -165,19 +163,20 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "ban",
+                        "ban" if not parsed["dry_run"] else "ban (dry run)",
                         ctx.author,
                         member,
-                        parsed["reason"],
+                        reason,
                         duration_seconds,
                         infraction.id,
                     )
 
-                delete_days = 1 if parsed["purge"] else 0
-                await member.ban(
-                    reason=f"{ctx.author.name}: {parsed['reason']}",
-                    delete_message_days=delete_days,
-                )
+                if not parsed["dry_run"]:
+                    delete_days = 1 if parsed["purge"] else 0
+                    await member.ban(
+                        reason=f"{ctx.author.name}: {reason}",
+                        delete_message_days=delete_days,
+                    )
 
                 success_count += 1
 
@@ -190,38 +189,40 @@ class ModerationCommands(CogHelper, commands.Cog):
                 if duration_seconds
                 else ""
             )
+            prefix = "[dry run] " if parsed["dry_run"] else ""
             if success_count == 1:
-                await ctx.send(f"banned {valid_members[0].mention}{duration_text}")
+                await ctx.send(
+                    f"{prefix}banned {valid_members[0].mention}{duration_text}"
+                )
             else:
-                await ctx.send(f"banned {success_count} users{duration_text}")
+                await ctx.send(f"{prefix}banned {success_count} users{duration_text}")
 
             self.log_info(
-                f"{ctx.author.name} banned {success_count} users: {parsed['reason']}"
+                f"{ctx.author.name} {'dry-run ' if parsed['dry_run'] else ''}banned {success_count} users: {reason}"
             )
 
     @commands.command()
     async def kick(self, ctx, *, args: str = ""):
-        """
-        kick [@user] {-s} {"reason"}
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
         if not args:
-            await ctx.send('usage: kick [@user] {-s} {"reason"}')
+            await ctx.send('usage: kick {-s|-D} [@user|id|name] {"reason"}')
             return
 
         parsed = self.parser.parse_kick(args)
-
-        members = await self.parser.convert_mentions_to_members(ctx, parsed["users"])
+        targets, reason = await self.parser.parse_targets_and_reason(
+            ctx, parsed["raw_args"]
+        )
+        members = await self.parser.resolve_users(ctx, targets)
 
         if not members:
             await ctx.send("no valid users provided")
             return
 
         valid_members, errors = self.parser.validate_targets(
-            members, ctx.author, "kick"
+            members, ctx.author, "kick", parsed["dry_run"]
         )
 
         if errors:
@@ -234,12 +235,12 @@ class ModerationCommands(CogHelper, commands.Cog):
         for member in valid_members:
             try:
                 dm_sent = False
-                if not parsed["silent"]:
+                if not parsed["silent"] and not parsed["dry_run"]:
                     dm_sent = await self.mod_helper.notify_user(
                         member,
                         ctx.guild,
                         "kicked",
-                        parsed["reason"],
+                        reason,
                         moderator=ctx.author,
                     )
 
@@ -247,8 +248,8 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "kick",
-                    parsed["reason"],
+                    "kick" if not parsed["dry_run"] else "kick (dry run)",
+                    reason,
                     dm_sent=dm_sent,
                 )
 
@@ -256,14 +257,15 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "kick",
+                        "kick" if not parsed["dry_run"] else "kick (dry run)",
                         ctx.author,
                         member,
-                        parsed["reason"],
+                        reason,
                         infraction_id=infraction.id,
                     )
 
-                await member.kick(reason=f"{ctx.author.name}: {parsed['reason']}")
+                if not parsed["dry_run"]:
+                    await member.kick(reason=f"{ctx.author.name}: {reason}")
 
                 success_count += 1
 
@@ -271,26 +273,24 @@ class ModerationCommands(CogHelper, commands.Cog):
                 await ctx.send(f"failed to kick {member.mention}: {e}")
 
         if success_count > 0:
+            prefix = "[dry run] " if parsed["dry_run"] else ""
             if success_count == 1:
-                await ctx.send(f"kicked {valid_members[0].mention}")
+                await ctx.send(f"{prefix}kicked {valid_members[0].mention}")
             else:
-                await ctx.send(f"kicked {success_count} users")
+                await ctx.send(f"{prefix}kicked {success_count} users")
 
             self.log_info(
-                f"{ctx.author.name} kicked {success_count} users: {parsed['reason']}"
+                f"{ctx.author.name} {'dry-run ' if parsed['dry_run'] else ''}kicked {success_count} users: {reason}"
             )
 
     @commands.command()
     async def mute(self, ctx, *, args: str = ""):
-        """
-        mute [-d duration] {-s} [@user] {"reason"}
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
         if not args:
-            await ctx.send('usage: mute [-d duration] {-s} [@user] {"reason"}')
+            await ctx.send('usage: mute [-d dur] {-s|-D} [@user|id|name] {"reason"}')
             return
 
         config = self.mod_helper.get_config(ctx.guild.id)
@@ -305,15 +305,17 @@ class ModerationCommands(CogHelper, commands.Cog):
             return
 
         parsed = self.parser.parse_mute(args)
-
-        members = await self.parser.convert_mentions_to_members(ctx, parsed["users"])
+        targets, reason = await self.parser.parse_targets_and_reason(
+            ctx, parsed["raw_args"]
+        )
+        members = await self.parser.resolve_users(ctx, targets)
 
         if not members:
             await ctx.send("no valid users provided")
             return
 
         valid_members, errors = self.parser.validate_targets(
-            members, ctx.author, "mute"
+            members, ctx.author, "mute", parsed["dry_run"]
         )
 
         if errors:
@@ -332,17 +334,18 @@ class ModerationCommands(CogHelper, commands.Cog):
         success_count = 0
         for member in valid_members:
             try:
-                await member.add_roles(
-                    muted_role, reason=f"muted by {ctx.author.name}: {parsed['reason']}"
-                )
+                if not parsed["dry_run"]:
+                    await member.add_roles(
+                        muted_role, reason=f"muted by {ctx.author.name}: {reason}"
+                    )
 
                 dm_sent = False
-                if not parsed["silent"]:
+                if not parsed["silent"] and not parsed["dry_run"]:
                     dm_sent = await self.mod_helper.notify_user(
                         member,
                         ctx.guild,
                         "muted",
-                        parsed["reason"],
+                        reason,
                         duration_seconds,
                         ctx.author,
                     )
@@ -351,8 +354,8 @@ class ModerationCommands(CogHelper, commands.Cog):
                     member.id,
                     ctx.author.id,
                     ctx.guild.id,
-                    "mute",
-                    parsed["reason"],
+                    "mute" if not parsed["dry_run"] else "mute (dry run)",
+                    reason,
                     duration=duration_seconds,
                     dm_sent=dm_sent,
                 )
@@ -361,15 +364,19 @@ class ModerationCommands(CogHelper, commands.Cog):
                     await self.mod_helper.log_action(
                         self.bot,
                         ctx.guild,
-                        "mute",
+                        "mute" if not parsed["dry_run"] else "mute (dry run)",
                         ctx.author,
                         member,
-                        parsed["reason"],
+                        reason,
                         duration_seconds,
                         infraction.id,
                     )
 
-                if not parsed["silent"] and config.mute_channel_id:
+                if (
+                    not parsed["silent"]
+                    and not parsed["dry_run"]
+                    and config.mute_channel_id
+                ):
                     mute_channel = ctx.guild.get_channel(config.mute_channel_id)
                     if mute_channel:
                         duration_text = (
@@ -379,7 +386,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                         )
                         await mute_channel.send(
                             f"{member.mention}, you have been muted{duration_text}.\n"
-                            f"**reason:** {parsed['reason']}\n"
+                            f"**reason:** {reason}\n"
                             f"*if you believe this is a mistake, please wait for a moderator to respond*"
                         )
 
@@ -394,37 +401,30 @@ class ModerationCommands(CogHelper, commands.Cog):
                 if duration_seconds
                 else ""
             )
+            prefix = "[dry run] " if parsed["dry_run"] else ""
             if success_count == 1:
-                await ctx.send(f"muted {valid_members[0].mention}{duration_text}")
+                await ctx.send(
+                    f"{prefix}muted {valid_members[0].mention}{duration_text}"
+                )
             else:
-                await ctx.send(f"muted {success_count} users{duration_text}")
+                await ctx.send(f"{prefix}muted {success_count} users{duration_text}")
 
             self.log_info(
-                f"{ctx.author.name} muted {success_count} users: {parsed['reason']}"
+                f"{ctx.author.name} {'dry-run ' if parsed['dry_run'] else ''}muted {success_count} users: {reason}"
             )
 
     @commands.command()
     async def warn(self, ctx, *, args: str = ""):
-        """
-        warn [@user] ["reason"]
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
         if not args:
-            await ctx.send('usage: warn [@user] ["reason"]')
+            await ctx.send('usage: warn [@user|id|name] ["reason"]')
             return
 
-        parts = args.split()
-        user_mentions = [p for p in parts if p.startswith("<@") and p.endswith(">")]
-        reason_parts = [
-            p for p in parts if not (p.startswith("<@") and p.endswith(">"))
-        ]
-
-        reason = " ".join(reason_parts) if reason_parts else "no reason provided"
-
-        members = await self.parser.convert_mentions_to_members(ctx, user_mentions)
+        targets, reason = await self.parser.parse_targets_and_reason(ctx, args)
+        members = await self.parser.resolve_users(ctx, targets)
 
         if not members:
             await ctx.send("no valid users provided")
@@ -471,20 +471,19 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @commands.command()
     async def pardon(self, ctx, *, args: str = ""):
-        """
-        pardon [@user] {-b|-m|-r} [id] {"reason"}
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
         if not args:
-            await ctx.send('usage: pardon [@user] {-b|-m|-r} [id] {"reason"}')
+            await ctx.send('usage: pardon [@user|id|name] {-b|-m|-r} [id] {"reason"}')
             return
 
         parsed = self.parser.parse_pardon(args)
-
-        members = await self.parser.convert_mentions_to_members(ctx, parsed["users"])
+        targets, reason = await self.parser.parse_targets_and_reason(
+            ctx, parsed["raw_args"]
+        )
+        members = await self.parser.resolve_users(ctx, targets)
 
         if not members:
             await ctx.send("no valid users provided")
@@ -497,9 +496,7 @@ class ModerationCommands(CogHelper, commands.Cog):
 
             if parsed["unban"]:
                 try:
-                    await ctx.guild.unban(
-                        member, reason=f"{ctx.author.name}: {parsed['reason']}"
-                    )
+                    await ctx.guild.unban(member, reason=f"{ctx.author.name}: {reason}")
                     actions_taken.append("unbanned")
                 except discord.NotFound:
                     pass
@@ -512,7 +509,7 @@ class ModerationCommands(CogHelper, commands.Cog):
                     if muted_role and muted_role in member.roles:
                         await member.remove_roles(
                             muted_role,
-                            reason=f"unmuted by {ctx.author.name}: {parsed['reason']}",
+                            reason=f"unmuted by {ctx.author.name}: {reason}",
                         )
                         actions_taken.append("unmuted")
 
@@ -559,9 +556,6 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @commands.command()
     async def slowmode(self, ctx, duration: str = "0s"):
-        """
-        slowmode [duration]
-        """
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
@@ -572,7 +566,6 @@ class ModerationCommands(CogHelper, commands.Cog):
             await ctx.send(f"invalid duration: {duration}")
             return
 
-        # 21600 seconds = 6 hours
         if duration_seconds > 21600:
             await ctx.send("slowmode cannot exceed 6 hours")
             return
@@ -595,52 +588,50 @@ class ModerationCommands(CogHelper, commands.Cog):
             await ctx.send(f"failed to set slowmode: {e}")
 
     @commands.command(aliases=["warnings", "history", "infractions"])
-    async def cases(self, ctx, member: discord.Member = None):
-        """view moderation history for a user"""
+    async def cases(self, ctx, target: str = None):
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
             return
 
-        target = member or ctx.author
-        infractions = self.mod_helper.get_user_infractions(target.id, ctx.guild.id)
+        if target:
+            members = await self.parser.resolve_users(ctx, [target])
+            if not members:
+                await ctx.send("user not found")
+                return
+            member = members[0]
+        else:
+            member = ctx.author
+
+        infractions = self.mod_helper.get_user_infractions(member.id, ctx.guild.id)
 
         if not infractions:
-            await ctx.send(f"{target.mention} has no infractions")
+            await ctx.send(f"{member.mention} has no infractions")
             return
 
-        embed = discord.Embed(
-            title=f"moderation history for {target.name}",
-            color=discord.Color.blurple(),
-            timestamp=datetime.utcnow(),
-        )
-
-        embed.set_thumbnail(url=target.display_avatar.url)
-
         active_count = sum(1 for i in infractions if i.active)
-        embed.description = f"total: {len(infractions)} | active: {active_count}"
+
+        msg = f"**moderation history for {member.name}**\n"
+        msg += f"total: {len(infractions)} | active: {active_count}\n\n"
 
         for infraction in infractions[:10]:
             status = "[ACTIVE]" if infraction.active else "[RESOLVED]"
             moderator = ctx.guild.get_member(infraction.moderator_id)
             mod_name = moderator.name if moderator else f"id:{infraction.moderator_id}"
 
-            value = f"**reason:** {infraction.reason}\n"
-            value += f"**moderator:** {mod_name}\n"
-            value += f"**date:** {format_timestamp(infraction.created_at)}"
+            msg += f"{status} case #{infraction.id} - {infraction.type}\n"
+            msg += f"  reason: {infraction.reason}\n"
+            msg += f"  moderator: {mod_name}\n"
+            msg += f"  date: {format_timestamp(infraction.created_at)}\n"
 
             if infraction.duration:
-                value += f"\n**duration:** {format_relative_time(infraction.duration)}"
+                msg += f"  duration: {format_relative_time(infraction.duration)}\n"
 
-            embed.add_field(
-                name=f"{status} case #{infraction.id} - {infraction.type}",
-                value=value,
-                inline=False,
-            )
+            msg += "\n"
 
         if len(infractions) > 10:
-            embed.set_footer(text=f"showing 10 of {len(infractions)} infractions")
+            msg += f"-# showing 10 of {len(infractions)} infractions"
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
     @commands.group(invoke_without_command=True)
     async def config(self, ctx):
@@ -649,10 +640,6 @@ class ModerationCommands(CogHelper, commands.Cog):
             return
 
         config = self.mod_helper.get_config(ctx.guild.id)
-
-        embed = discord.Embed(
-            title="moderation configuration", color=discord.Color.blurple()
-        )
 
         log_ch = (
             ctx.guild.get_channel(config.log_channel_id)
@@ -665,13 +652,6 @@ class ModerationCommands(CogHelper, commands.Cog):
             else None
         )
 
-        embed.add_field(
-            name="channels",
-            value=f"log: {log_ch.mention if log_ch else 'not set'}\n"
-            f"mute: {mute_ch.mention if mute_ch else 'not set'}",
-            inline=False,
-        )
-
         muted_role = (
             ctx.guild.get_role(config.muted_role_id) if config.muted_role_id else None
         )
@@ -680,15 +660,16 @@ class ModerationCommands(CogHelper, commands.Cog):
         )
         op_role = ctx.guild.get_role(config.op_role_id) if config.op_role_id else None
 
-        embed.add_field(
-            name="roles",
-            value=f"muted: {muted_role.mention if muted_role else 'not set'}\n"
-            f"mod: {mod_role.mention if mod_role else 'not set'}\n"
-            f"op: {op_role.mention if op_role else 'not set'}",
-            inline=False,
-        )
+        msg = "**moderation configuration**\n\n"
+        msg += "**channels**\n"
+        msg += f"log: {log_ch.mention if log_ch else 'not set'}\n"
+        msg += f"mute: {mute_ch.mention if mute_ch else 'not set'}\n\n"
+        msg += "**roles**\n"
+        msg += f"muted: {muted_role.mention if muted_role else 'not set'}\n"
+        msg += f"mod: {mod_role.mention if mod_role else 'not set'}\n"
+        msg += f"op: {op_role.mention if op_role else 'not set'}"
 
-        await ctx.send(embed=embed)
+        await ctx.send(msg)
 
     @config.command(name="log_channel")
     async def config_log_channel(self, ctx, channel: discord.TextChannel):
@@ -710,7 +691,6 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @config.command(name="muted_role")
     async def config_muted_role(self, ctx, role: discord.Role):
-        """set the muted role"""
         if not is_op(ctx.author):
             await ctx.send("requires operator mode. run >op first")
             return
@@ -720,7 +700,6 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @config.command(name="mod_role")
     async def config_mod_role(self, ctx, role: discord.Role):
-        """set the moderator role"""
         if not is_op(ctx.author):
             await ctx.send("requires operator mode. run >op first")
             return
@@ -730,7 +709,6 @@ class ModerationCommands(CogHelper, commands.Cog):
 
     @config.command(name="op_role")
     async def config_op_role(self, ctx, role: discord.Role):
-        """set the operator role"""
         if not is_op(ctx.author):
             await ctx.send("requires operator mode. run >op first")
             return
