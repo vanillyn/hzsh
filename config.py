@@ -6,7 +6,7 @@ NEO_POLITA = 1395939916189405325
 SHELL_ACCESS_ROLE = "> connected..."
 ACHIEVEMENTS_CHANNEL = 1429897092226351244
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 USERMOD_MAPPINGS = {
     "pronouns": {
@@ -130,7 +130,7 @@ ACHIEVEMENTS = {
         "rarity": "rare",
         "trigger_type": "manual",
         "trigger_value": None,
-        "role": "> cookie giver",
+        "role": None,
     },
     "haveacookiemachine": {
         "name": "have a cookie machine",
@@ -154,7 +154,7 @@ ACHIEVEMENTS = {
         "rarity": "rare",
         "trigger_type": "manual",
         "trigger_value": None,
-        "role": "> cookie hoarder",
+        "role": None,
     },
     "cookiemachine": {
         "name": "cookie machine",
@@ -170,7 +170,7 @@ ACHIEVEMENTS = {
         "rarity": "legendary",
         "trigger_type": "manual",
         "trigger_value": None,
-        "role": "> bakery",
+        "role": None,
     },
     "echo": {
         "name": "hello hello hello hello world world world world world",
@@ -284,6 +284,14 @@ ACHIEVEMENTS = {
         "trigger_value": ("woof", 500),
         "role": None,
     },
+    "bilingual": {
+        "name": "bilingual :3",
+        "description": "send 10 messages containing both meow and woof",
+        "rarity": "rare",
+        "trigger_type": "message_count",
+        "trigger_value": (("meow", "woof"), 10),
+        "role": None,
+    },
     "yourewhat": {
         "name": "you're what?",
         "description": 'say "i\'m confused" five times',
@@ -358,18 +366,88 @@ ACHIEVEMENTS = {
     },
     "gambling": {
         "name": "let's go gambling!!!!",
-        "description": "play Balatro or CloverPit",
+        "description": "play Balatro, CloverPit or Buckshot Roulette",
         "rarity": "rare",
         "trigger_type": "presence",
-        "trigger_value": ["Balatro", "CloverPit"],
-        "role": "> let's go gambling!!!!",
+        "trigger_value": ["Balatro", "CloverPit", "Buckshot Roulette"],
+        "role": None,
     },
-    "dreamer": {
+    "honkaistarrail": {
         "name": "why do we dream..",
         "description": "play Honkai: Star Rail",
         "rarity": "common",
         "trigger_type": "presence",
         "trigger_value": ["Honkai: Star Rail"],
+        "role": None,
+    },
+    "inscryption": {
+        "name": "what is the karnoffel code?",
+        "description": "play Inscryption",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": ["Inscryption"],
+        "role": None,
+    },
+    "halflife": {
+        "name": "half-life 3 soon",
+        "description": "play Half-Life or Half-Life 2",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": ["Half-Life", "Half-Life 2"],
+        "role": None,
+    },
+    "roblox": {
+        "name": "this achievement gives 100 robux",
+        "description": "play Roblox",
+        "rarity": "common",
+        "trigger_type": "presence",
+        "trigger_value": ["Roblox"],
+        "role": None,
+    },
+    "ultrakill": {
+        "name": "im ultrakilling it",
+        "description": "play ULTRAKILL",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": ["ULTRAKILL"],
+        "role": None,
+    },
+    "danganronpa": {
+        "name": "the sixteenth student",
+        "description": "play Danganronpa: Trigger Happy Havoc, Danganronpa 2: Goodbye Despair, or Danganronpa V3: Killing Harmony",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": [
+            "Danganronpa: Trigger Happy Havoc",
+            "Danganronpa 2: Goodbye Despair",
+            "Danganronpa V3: Killing Harmony",
+        ],
+        "role": None,
+    },
+    "ddlc": {
+        "name": "just monika",
+        "description": "play Doki Doki Literature Club! or Doki Doki Literature Club! Plus",
+        "rarity": "common",
+        "trigger_type": "presence",
+        "trigger_value": [
+            "Doki Doki Literature Club!",
+            "Doki Doki Literature Club! Plus",
+        ],
+        "role": None,
+    },
+    "nekopara": {
+        "name": "catgirl's paradise",
+        "description": "play any NEKOPARA game",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": [
+            "NEKOPARA Vol. 1",
+            "NEKOPARA Vol. 2",
+            "NEKOPARA Vol. 3",
+            "NEKOPARA Vol. 4",
+            "NEKOPARA After",
+            "NEKOPARA Extra",
+        ],
         "role": None,
     },
     "contributor": {
@@ -394,7 +472,15 @@ ACHIEVEMENTS = {
         "rarity": "rare",
         "trigger_type": "achievement_count",
         "trigger_value": 20,
-        "role": "> hazel / runner",
+        "role": "",
+    },
+    "rtfm": {
+        "name": "rtfm",
+        "description": "read the help page 3 times",
+        "rarity": "common",
+        "trigger_type": "message_count",
+        "trigger_value": (">help", 3),
+        "role": None,
     },
     "comeback": {
         "name": "comeback",
