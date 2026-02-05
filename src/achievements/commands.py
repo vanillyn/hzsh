@@ -71,14 +71,22 @@ class AchCommands(CogHelper, commands.Cog):
                     continue
 
                 if user_has:
-                    msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                    msg += f" - **{ach['name']}** ({ach['rarity']})\n"
                 else:
                     if ach["rarity"] == "rare":
-                        msg += f"`☆` ||**{ach['name']}**|| ({ach['rarity']})\n  ⋱ ||{ach['description']}||\n"
+                        msg += f"- ||**{ach['name']}**|| ({ach['rarity']})\n"
                     else:
-                        msg += f"`☆` **{ach['name']}** ({ach['rarity']})\n  ⋱ {ach['description']}\n"
+                        msg += f"- **{ach['name']}** ({ach['rarity']})\n"
 
-            await ctx.send(msg)
+            if len(msg) > 2000:
+                part1 = msg[:2000]
+                part2 = msg[2000:]
+
+                await ctx.send(part1)
+                await ctx.send(part2)
+                return
+
+            await ctx.send(msg[:2000])
             return
 
         if args[0] in ["-g", "--grant"]:

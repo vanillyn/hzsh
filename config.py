@@ -6,7 +6,7 @@ NEO_POLITA = 1395939916189405325
 SHELL_ACCESS_ROLE = "> connected..."
 ACHIEVEMENTS_CHANNEL = 1429897092226351244
 
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 
 USERMOD_MAPPINGS = {
     "pronouns": {
@@ -173,7 +173,7 @@ ACHIEVEMENTS = {
         "role": None,
     },
     "echo": {
-        "name": "hello hello hello hello world world world world world",
+        "name": "hello world (hello world)",
         "description": "run the echo command",
         "rarity": "common",
         "trigger_type": "command",
@@ -282,6 +282,14 @@ ACHIEVEMENTS = {
         "rarity": "legendary",
         "trigger_type": "message_count",
         "trigger_value": ("woof", 500),
+        "role": None,
+    },
+    "needygirl": {
+        "name": "internet overdose",
+        "description": "play NEEDY GIRL OVERDOSE",
+        "rarity": "rare",
+        "trigger_type": "presence",
+        "trigger_value": ["NEEDY GIRL OVERDOSE", "NEEDY STREAMER OVERLOAD"],
         "role": None,
     },
     "bilingual": {
