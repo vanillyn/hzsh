@@ -1,14 +1,36 @@
 import asyncio
 import hashlib
 import subprocess
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
+
+
+@dataclass
+class ResourceLimits:
+    max_processes: int = 10
+    max_memory_mb: int = 1024
+    max_cpu_percent: float = 25.0
+    max_disk_mb: int = 1024
+    max_file_size_mb: int = 50
+
+
+@dataclass
+class ProcessInfo:
+    pid: int
+    command: str
+    cpu_percent: float
+    memory_mb: float
+    start_time: datetime
 
 
 class DockerService:
     def __init__(self, container_name: str = "hzsh_linux"):
         self.container_name = container_name
         self.user_id_map = {}
+        self.limits = ResourceLimits()
+        self.user_processes = {}
 
     def get_uid(self, discord_id: str) -> int:
         if discord_id not in self.user_id_map:
@@ -28,6 +50,120 @@ class DockerService:
         except Exception:
             return False
 
+    async def get_user_processes(self, discord_id: str) -> list[ProcessInfo]:
+        """get all processes for user"""
+        uid = self.get_uid(discord_id)
+
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    self.container_name,
+                    "ps",
+                    "-u",
+                    str(uid),
+                    "-o",
+                    "pid,comm,%cpu,%mem,etime",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+
+            if result.returncode != 0:
+                return []
+
+            processes = []
+            for line in result.stdout.strip().split("\n")[1:]:
+                parts = line.split()
+                if len(parts) >= 5:
+                    try:
+                        processes.append(
+                            ProcessInfo(
+                                pid=int(parts[0]),
+                                command=parts[1],
+                                cpu_percent=float(parts[2]),
+                                memory_mb=float(parts[3]) * 10,
+                                start_time=datetime.utcnow(),
+                            )
+                        )
+                    except ValueError:
+                        continue
+
+            return processes
+        except Exception:
+            return []
+
+    async def check_resource_limits(
+        self, discord_id: str
+    ) -> Tuple[bool, Optional[str]]:
+        """check if within resource limits"""
+        processes = await self.get_user_processes(discord_id)
+
+        if len(processes) >= self.limits.max_processes:
+            return False, f"process limit reached ({self.limits.max_processes})"
+
+        total_cpu = sum(p.cpu_percent for p in processes)
+        if total_cpu > self.limits.max_cpu_percent:
+            return (
+                False,
+                f"cpu limit exceeded ({total_cpu:.1f}% > {self.limits.max_cpu_percent}%)",
+            )
+
+        total_mem = sum(p.memory_mb for p in processes)
+        if total_mem > self.limits.max_memory_mb:
+            return (
+                False,
+                f"memory limit exceeded ({total_mem:.0f}mb > {self.limits.max_memory_mb}mb)",
+            )
+
+        disk_usage = await self.get_user_quota(
+            discord_id.split("-")[0] if "-" in discord_id else discord_id
+        )
+        if disk_usage:
+            try:
+                usage_mb = float(disk_usage.replace("M", "").replace("G", "000"))
+                if usage_mb > self.limits.max_disk_mb:
+                    return (
+                        False,
+                        f"disk limit exceeded ({usage_mb:.0f}mb > {self.limits.max_disk_mb}mb)",
+                    )
+            except ValueError:
+                pass
+
+        return True, None
+
+    async def kill_user_process(self, discord_id: str, pid: int) -> bool:
+        """kill a process"""
+        self.get_uid(discord_id)
+
+        try:
+            result = subprocess.run(
+                ["docker", "exec", self.container_name, "kill", "-9", str(pid)],
+                capture_output=True,
+                timeout=5,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    async def kill_all_user_processes(self, discord_id: str) -> int:
+        """kill all processes for user"""
+        uid = self.get_uid(discord_id)
+
+        try:
+            subprocess.run(
+                ["docker", "exec", self.container_name, "pkill", "-9", "-u", str(uid)],
+                capture_output=True,
+                timeout=5,
+            )
+
+            processes = await self.get_user_processes(discord_id)
+            return len(processes)
+        except Exception:
+            return 0
+
     async def exec_command(
         self,
         command: str,
@@ -35,8 +171,15 @@ class DockerService:
         discord_id: Optional[str] = None,
         working_dir: Optional[str] = None,
         timeout: float = 30.0,
+        check_limits: bool = True,
     ) -> Tuple[str, int]:
-        """execute command in container, return (output, exit_code)"""
+        """execute command in the container"""
+
+        if check_limits and discord_id:
+            allowed, reason = await self.check_resource_limits(discord_id)
+            if not allowed:
+                return f"resource limit exceeded: {reason}", -1
+
         cmd_args = ["docker", "exec"]
 
         if username and discord_id:
@@ -73,7 +216,7 @@ class DockerService:
     async def ensure_user_exists(
         self, username: str, discord_id: str, home_dir: Path
     ) -> bool:
-        """ensure user exists in container and has home directory"""
+        """ensure user exists with quotas"""
         uid = self.get_uid(discord_id)
 
         user_home = home_dir / username
@@ -118,7 +261,7 @@ class DockerService:
         return True
 
     async def get_disk_usage(self, path: str = "/home") -> Optional[str]:
-        """get disk usage for a path"""
+        """get disk usage"""
         try:
             result = subprocess.run(
                 ["docker", "exec", self.container_name, "df", "-h", path],
@@ -137,7 +280,7 @@ class DockerService:
         return None
 
     async def get_user_quota(self, username: str) -> Optional[str]:
-        """get disk quota for specific user"""
+        """get disk quota"""
         try:
             result = subprocess.run(
                 [
@@ -160,7 +303,7 @@ class DockerService:
         return None
 
     async def get_container_info(self, info_type: str) -> str:
-        """get various container information"""
+        """get container info"""
         commands_map = {
             "os": "cat /etc/os-release | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"'",
             "kernel": "uname -r",
@@ -175,11 +318,13 @@ class DockerService:
         if not cmd:
             return "unknown"
 
-        output, exit_code = await self.exec_command(cmd, timeout=5.0)
+        output, exit_code = await self.exec_command(
+            cmd, timeout=5.0, check_limits=False
+        )
         return output if exit_code == 0 else "unavailable"
 
     async def get_stats(self) -> dict:
-        """get docker stats for container"""
+        """get docker stats"""
         try:
             process = await asyncio.create_subprocess_exec(
                 "docker",
@@ -208,7 +353,7 @@ class DockerService:
             }
 
     async def list_users(self) -> list:
-        """list all users in container (uid >= 1000)"""
+        """list all users"""
         try:
             result = subprocess.run(
                 [
@@ -235,7 +380,7 @@ _docker_service = None
 
 
 def get_docker_service() -> DockerService:
-    """get or create the global docker service instance"""
+    """get docker service singleton"""
     global _docker_service
     if _docker_service is None:
         _docker_service = DockerService()

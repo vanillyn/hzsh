@@ -6,7 +6,7 @@ NEO_POLITA = 1395939916189405325
 SHELL_ACCESS_ROLE = "> connected..."
 ACHIEVEMENTS_CHANNEL = 1429897092226351244
 
-VERSION = "2.3.0"
+VERSION = "2.5.1"
 
 USERMOD_MAPPINGS = {
     "pronouns": {
@@ -348,14 +348,6 @@ ACHIEVEMENTS = {
         "trigger_value": ["minecraft", "prismlauncher", "multimc"],
         "role": "> blocky",
     },
-    "sudoers": {
-        "name": "sudoers",
-        "description": "run sudo -i, doas -s, or su in hzsh",
-        "rarity": "rare",
-        "trigger_type": "command",
-        "trigger_value": ["sudo -i", "doas -s", "su"],
-        "role": "> sudoers",
-    },
     "accessdenied": {
         "name": "access denied",
         "description": "try running sudo, su, or doas",
@@ -525,10 +517,10 @@ ACHIEVEMENTS = {
 }
 
 RARITY_XP = {
-    "common": 25,
-    "rare": 50,
-    "legendary": 100,
-    "master": 1000,
+    "common": 1,
+    "rare": 10,
+    "legendary": 20,
+    "master": 100,
 }
 
 ACHIEVEMENT_MILESTONES = {

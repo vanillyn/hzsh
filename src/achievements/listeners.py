@@ -17,7 +17,7 @@ class Achievements(CogHelper, commands.Cog):
 
         if message.guild.id == config.GUILD_ID:
             await self.ach_system.check_message_achievements(
-                str(message.author.id), message.content, message.guild
+                str(message.author.id), message.content, message.guild, message.channel
             )
             await self.ach_system.check_inactivity_achievement(
                 str(message.author.id), message.guild
@@ -40,7 +40,7 @@ class Achievements(CogHelper, commands.Cog):
                 break
 
             if starter_message and starter_message.author:
-                await self.ach_system.check_forum_post_achievement(
+                await self.ach_system.check_forum_achievements(
                     str(starter_message.author.id), thread.parent.id, thread.guild
                 )
 
@@ -68,8 +68,9 @@ class Achievements(CogHelper, commands.Cog):
             return
 
         if before.activities != after.activities:
-            for activity in after.activities:
-                await self.ach_system.check_presence_achievements(after, activity)
+            await self.ach_system.check_presence_achievements(
+                str(after.id), after, after.guild
+            )
 
     async def check_mutual_servers(self, member):
         if not self.ach_system.has_achievement(str(member.id), "neopolita"):

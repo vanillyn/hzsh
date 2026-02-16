@@ -4,6 +4,10 @@ import config
 from src.misc import is_staff
 
 
+def has_guide_role(author):
+    return any(role.name == "guide" for role in author.roles)
+
+
 class Help(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -22,6 +26,12 @@ class Help(commands.Cog):
         msg += (
             "`>wp [query] (-t type) (-l lang) (-i bool) (--link bool)` - wikipedia\n\n"
         )
+
+        if has_guide_role(ctx.author):
+            msg += "**guides**\n"
+            msg += "`>guides new [name]` - create a new guide\n"
+            msg += "`>guides edit [name]` - edit a guide\n"
+            msg += "`>guides remove [name]` - remove a guide\n\n"
 
         msg += "**moderation**\n"
         if is_staff(ctx.author):

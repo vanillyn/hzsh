@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
+
 import config
+from src.misc import has_shell_access
 
 
 class hzshUtils(commands.Cog):
@@ -14,7 +16,7 @@ class hzshUtils(commands.Cog):
             await ctx.send("shell system unavailable")
             return
 
-        if not shell_cog.has_access(ctx.author):
+        if not has_shell_access(ctx.author):
             await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
 
@@ -26,7 +28,7 @@ class hzshUtils(commands.Cog):
         if len(result) > 1900:
             result = result[:1900] + "\n... output truncated"
 
-        await ctx.send(f"```\n{result}\n```")
+        await ctx.send(f"```ansi\n{result}\n```")
 
     @commands.command(name="cd")
     async def cd(self, ctx, *, path: str = "~"):
@@ -35,7 +37,7 @@ class hzshUtils(commands.Cog):
             await ctx.send("shell system unavailable")
             return
 
-        if not shell_cog.has_access(ctx.author):
+        if not has_shell_access(ctx.author):
             await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
 

@@ -47,7 +47,6 @@ class Shell(CogHelper, commands.Cog):
 
     @commands.command(name="hzsh", aliases=["shell", "bash", "ssh"])
     async def hzsh(self, ctx):
-        """start interactive shell session"""
         if not has_shell_access(ctx.author):
             await ctx.send(f"you are not connected to `{config.NAME}`.")
             return
@@ -179,7 +178,7 @@ class Shell(CogHelper, commands.Cog):
         return bell_triggered
 
     def _handle_escape(self, screen, text):
-        """handle ANSI escape sequences - same as before"""
+        """handle ANSI escape sequences"""
         if len(text) < 2:
             return 1
 
@@ -329,7 +328,7 @@ class Shell(CogHelper, commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        """handle interactive shell input"""
+        """handle shell input"""
         if message.author.bot:
             return
 

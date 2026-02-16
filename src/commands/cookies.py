@@ -1,37 +1,247 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import discord
+from discord import SeparatorSpacing
 from discord.ext import commands
+from discord.ui import ActionRow, Container, LayoutView, Separator, TextDisplay
+from discord.ui.section import Section
 
 from src.achievements.utils import get_achievement_system
 from src.misc import CogHelper, get_data_manager
 
 
-class CookieView(discord.ui.View):
-    def __init__(self, author, target, amount=1):
-        super().__init__(timeout=30.0)
+class CookieGameView(LayoutView):
+    def __init__(self, author, cookie_sys):
+        super().__init__(timeout=180.0)
         self.author = author
-        self.target = target
-        self.amount = amount
-        self.value = None
+        self.cookie_sys = cookie_sys
+        self.message = None
+        self.build_view()
 
-    async def interaction_check(self, interaction):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.author.id:
             await interaction.response.send_message("not your cookies", ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="yes", style=discord.ButtonStyle.green)
-    async def yes(self, interaction, button):
-        self.value = True
-        await interaction.response.defer()
-        self.stop()
+    def build_view(self):
+        self.clear_items()
 
-    @discord.ui.button(label="no", style=discord.ButtonStyle.grey)
-    async def no(self, interaction, button):
-        self.value = False
+        user = self.cookie_sys.get_user_data(self.author.id)
+        cookies = user.get("cookies", 0)
+        factories = user.get("factories", 0)
+        cakes = user.get("cakes", 0)
+
+        text = "# cookie factory\n"
+        text += f"**cookies:** {cookies}\n"
+        text += f"**factories:** {factories} (produces {factories} cookies / 5h)\n"
+        text += f"**cakes:** {cakes} (multiplier: +{cakes} per source)\n\n"
+
+        if factories > 0:
+            last_collect = user.get("last_collect")
+            if last_collect:
+                last_dt = datetime.fromisoformat(last_collect)
+                elapsed = (datetime.utcnow() - last_dt).total_seconds()
+                periods = int(elapsed / (5 * 3600))
+                if periods > 0:
+                    ready = periods * factories * (1 + cakes)
+                    text += f"**ready to collect:** {ready} cookies\n\n"
+
+        action_row = discord.ui.ActionRow()
+
+        if cookies >= 20:
+            btn = discord.ui.Button(
+                label="buy factory (20 cookies)",
+                style=discord.ButtonStyle.primary,
+                custom_id="buy_factory",
+            )
+            btn.callback = self.buy_factory_callback
+            action_row.add_item(btn)
+
+        if factories > 0:
+            btn = discord.ui.Button(
+                label="collect cookies",
+                style=discord.ButtonStyle.success,
+                custom_id="collect",
+            )
+            btn.callback = self.collect_callback
+            action_row.add_item(btn)
+
+        if cookies >= 100:
+            btn = discord.ui.Button(
+                label="bake cake (100 cookies)",
+                style=discord.ButtonStyle.danger,
+                custom_id="prestige",
+            )
+            btn.callback = self.prestige_callback
+            action_row.add_item(btn)
+
+        if cakes >= 5 and factories < 5:
+            btn = discord.ui.Button(
+                label="expand factory (5 cakes)",
+                style=discord.ButtonStyle.primary,
+                custom_id="upgrade",
+            )
+            btn.callback = self.upgrade_callback
+            action_row.add_item(btn)
+
+        btn = discord.ui.Button(
+            label="close", style=discord.ButtonStyle.secondary, custom_id="close"
+        )
+        btn.callback = self.close_callback
+        action_row.add_item(btn)
+
+        container = Container(
+            TextDisplay(text),
+            Separator(spacing=SeparatorSpacing.small),
+            action_row,
+            accent_color=0xF4A261,
+        )
+
+        self.add_item(container)
+
+    async def buy_factory_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+
+        if user.get("cookies", 0) >= 20:
+            user["cookies"] = user.get("cookies", 0) - 20
+            user["factories"] = user.get("factories", 0) + 1
+            self.cookie_sys.save()
+            self.build_view()
+            await interaction.response.edit_message(view=self)
+        else:
+            await interaction.response.send_message(
+                "not enough cookies", ephemeral=True
+            )
+
+    async def collect_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+        last_collect = user.get("last_collect")
+
+        if not last_collect:
+            user["last_collect"] = datetime.utcnow().isoformat()
+            self.cookie_sys.save()
+            await interaction.response.send_message("factory started", ephemeral=True)
+            return
+
+        last_dt = datetime.fromisoformat(last_collect)
+        elapsed = (datetime.utcnow() - last_dt).total_seconds()
+        periods = int(elapsed / (5 * 3600))
+
+        if periods > 0:
+            factories = user.get("factories", 0)
+            cakes = user.get("cakes", 0)
+            base_cookies = periods * factories
+            earned = self.cookie_sys.apply_multiplier(base_cookies, cakes)
+            user["cookies"] = user.get("cookies", 0) + earned
+            user["last_collect"] = datetime.utcnow().isoformat()
+            self.cookie_sys.save()
+
+            await self.cookie_sys.check_receive_achievements(
+                self.author.id, interaction.guild, interaction.channel
+            )
+
+            self.build_view()
+            await interaction.response.edit_message(view=self)
+        else:
+            remaining = (5 * 3600) - elapsed
+            hours = int(remaining // 3600)
+            mins = int((remaining % 3600) // 60)
+            await interaction.response.send_message(
+                f"wait {hours}h {mins}m before collecting", ephemeral=True
+            )
+
+    async def prestige_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+
+        if user.get("cookies", 0) >= 100:
+            user["cookies"] = user.get("cookies", 0) - 100
+            user["cakes"] = user.get("cakes", 0) + 1
+            user["factories"] = 0
+            user["last_collect"] = None
+            self.cookie_sys.save()
+
+            if user["cakes"] == 1:
+                await self.cookie_sys.ach.grant_achievement(
+                    str(self.author.id),
+                    "bakery",
+                    interaction.guild,
+                    interaction.channel,
+                )
+
+            self.build_view()
+            await interaction.response.edit_message(view=self)
+        else:
+            await interaction.response.send_message("need 100 cookies", ephemeral=True)
+
+    async def upgrade_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+
+        if user.get("cakes", 0) >= 5:
+            user["cakes"] = user.get("cakes", 0) - 5
+            multiplier = 5
+
+            factories = user.get("factories", 0)
+            cakes = user.get("cakes", 0)
+            for factory_idx in range(factories):
+                user["cookies"] = user.get("cookies", 0) + multiplier * (1 + cakes)
+
+            self.cookie_sys.save()
+            self.build_view()
+            await interaction.response.edit_message(view=self)
+        else:
+            await interaction.response.send_message("need 5 cakes", ephemeral=True)
+
+    async def eat_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+
+        if user.get("cookies", 0) > 0:
+            user["cookies"] = user.get("cookies", 0) - 1
+            self.cookie_sys.save()
+            self.build_view()
+            await interaction.response.edit_message(view=self)
+        else:
+            await interaction.response.send_message("no cookies to eat", ephemeral=True)
+
+    async def bake_callback(self, interaction: discord.Interaction):
+        user = self.cookie_sys.get_user_data(self.author.id)
+        last_bake = user.get("last_bake")
+
+        if last_bake:
+            last_dt = datetime.fromisoformat(last_bake)
+            elapsed = (datetime.utcnow() - last_dt).total_seconds()
+
+            if elapsed < 5 * 3600:
+                remaining = (5 * 3600) - elapsed
+                hours = int(remaining // 3600)
+                mins = int((remaining % 3600) // 60)
+                await interaction.response.send_message(
+                    f"wait {hours}h {mins}m before baking again", ephemeral=True
+                )
+                return
+
+        user["cookies"] = user.get("cookies", 0) + 1
+        user["last_bake"] = datetime.utcnow().isoformat()
+        self.cookie_sys.save()
+        self.build_view()
+        await interaction.response.edit_message(view=self)
+
+    async def close_callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
         self.stop()
+        if self.message:
+            try:
+                await self.message.delete()
+            except:
+                pass
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                self.disable_all_items()
+                await self.message.edit(view=self)
+            except:
+                pass
 
 
 class Cookies(CogHelper, commands.Cog):
@@ -49,12 +259,14 @@ class Cookies(CogHelper, commands.Cog):
                 "cakes": 0,
                 "given": 0,
                 "received": 0,
+                "factories": 0,
+                "last_collect": None,
                 "last_bake": None,
             }
         return self.data[uid]
 
     def apply_multiplier(self, base, cakes):
-        return base + cakes
+        return base + cakes * base
 
     def save(self):
         self.dm.save("cookies", self.data)
@@ -66,12 +278,12 @@ class Cookies(CogHelper, commands.Cog):
         giver = self.get_user_data(giver_id)
         receiver = self.get_user_data(receiver_id)
 
-        if giver["cookies"] < amount:
+        if giver.get("cookies", 0) < amount:
             return False
 
-        giver["cookies"] -= amount
-        receiver["cookies"] += amount
-        receiver["received"] += amount
+        giver["cookies"] = giver.get("cookies", 0) - amount
+        receiver["cookies"] = receiver.get("cookies", 0) + amount
+        receiver["received"] = receiver.get("received", 0) + amount
         self.save()
 
         await self.check_receive_achievements(receiver_id, guild, channel)
@@ -79,9 +291,10 @@ class Cookies(CogHelper, commands.Cog):
 
     async def reward_cookie(self, user_id, amount, guild, channel):
         user = self.get_user_data(user_id)
-        multiplied = self.apply_multiplier(amount, user["cakes"])
-        user["cookies"] += multiplied
-        user["received"] += multiplied
+        cakes = user.get("cakes", 0)
+        multiplied = self.apply_multiplier(amount, cakes)
+        user["cookies"] = user.get("cookies", 0) + multiplied
+        user["received"] = user.get("received", 0) + multiplied
         self.save()
 
         await self.check_receive_achievements(user_id, guild, channel)
@@ -89,7 +302,7 @@ class Cookies(CogHelper, commands.Cog):
 
     async def check_give_achievements(self, user_id, guild, channel):
         user = self.get_user_data(user_id)
-        given = user["given"]
+        given = user.get("given", 0)
 
         if given >= 1:
             await self.ach.grant_achievement(
@@ -106,7 +319,7 @@ class Cookies(CogHelper, commands.Cog):
 
     async def check_receive_achievements(self, user_id, guild, channel):
         user = self.get_user_data(user_id)
-        received = user["received"]
+        received = user.get("received", 0)
 
         if received >= 1:
             await self.ach.grant_achievement(str(user_id), "yay", guild, channel)
@@ -138,7 +351,7 @@ class Cookies(CogHelper, commands.Cog):
             await self.reward_cookie(mention.id, 1, message.guild, message.channel)
 
             giver = self.get_user_data(message.author.id)
-            giver["given"] += 1
+            giver["given"] = giver.get("given", 0) + 1
             self.save()
 
             await self.check_give_achievements(
@@ -149,216 +362,22 @@ class Cookies(CogHelper, commands.Cog):
             break
 
     @commands.command()
-    async def cookies(self, ctx, *args):
-        if not args:
-            user = self.get_user_data(ctx.author.id)
-            msg = f"{ctx.author.name} has {user['cookies']} cookie(s)"
-            if user["cakes"] > 0:
-                msg += f" and {user['cakes']} cake(s)"
-            await ctx.send(msg)
-            return
+    async def cookies(self, ctx):
+        view = CookieGameView(ctx.author, self)
+        msg = await ctx.send(view=view)
+        view.message = msg
 
-        if args[0] in ["-e", "--eat"]:
-            user = self.get_user_data(ctx.author.id)
-            if user["cookies"] <= 0:
-                await ctx.send("you dont have any cookies to eat")
-                return
 
-            user["cookies"] -= 1
-            self.save()
-            await ctx.send(
-                f"{ctx.author.name} has eaten a cookie, they now have {user['cookies']}"
-            )
-            return
+_cookie_system = None
 
-        if args[0] in ["--bake"]:
-            user = self.get_user_data(ctx.author.id)
 
-            if user["last_bake"]:
-                last = datetime.fromisoformat(user["last_bake"])
-                now = datetime.utcnow()
-                diff = now - last
-
-                if diff < timedelta(hours=5):
-                    remaining = timedelta(hours=5) - diff
-                    hours = int(remaining.total_seconds() // 3600)
-                    minutes = int((remaining.total_seconds() % 3600) // 60)
-                    await ctx.send(
-                        f"you need to wait {hours}h {minutes}m before baking again"
-                    )
-                    return
-
-            user["cookies"] += 1
-            user["last_bake"] = datetime.utcnow().isoformat()
-            self.save()
-
-            await ctx.send(
-                f"{ctx.author.name} has baked a cookie, they now have {user['cookies']}"
-            )
-            return
-
-        if args[0] in ["--redeem", "--prestige"]:
-            user = self.get_user_data(ctx.author.id)
-
-            if user["cookies"] < 100:
-                await ctx.send("you need at least 100 cookies to redeem")
-                return
-
-            cakes = user["cookies"] // 100
-            user["cookies"] %= 100
-            user["cakes"] += cakes
-            self.save()
-
-            if cakes == 1:
-                await self.ach.grant_achievement(
-                    str(ctx.author.id), "bakery", ctx.guild, ctx.channel
-                )
-
-            await ctx.send(
-                f"{ctx.author.name} redeemed {cakes} cake(s)! they now have {user['cookies']} cookies and {user['cakes']} cakes"
-            )
-            return
-
-        if args[0] in ["-g", "--give"]:
-            if len(args) < 2:
-                await ctx.send("usage: cookies -g @user [amount]")
-                return
-
-            try:
-                target = await commands.MemberConverter().convert(ctx, args[1])
-            except discord.NotFound:
-                await ctx.send("user not found")
-                return
-
-            amount = 1
-            if len(args) > 2:
-                try:
-                    amount = int(args[2])
-                except Exception:
-                    await ctx.send("invalid amount")
-                    return
-
-            if amount <= 0:
-                await ctx.send("amount must be positive")
-                return
-
-            user = self.get_user_data(ctx.author.id)
-            if user["cookies"] < amount:
-                await ctx.send("you dont have enough cookies")
-                return
-
-            success = await self.give_cookie(
-                ctx.author.id, target.id, amount, ctx.guild, ctx.channel
-            )
-
-            if success:
-                giver = self.get_user_data(ctx.author.id)
-                receiver = self.get_user_data(target.id)
-
-                giver["given"] += amount
-                self.save()
-
-                await self.check_give_achievements(
-                    ctx.author.id, ctx.guild, ctx.channel
-                )
-
-                await ctx.send(
-                    f"{ctx.author.name} ({giver['cookies']}) has given {target.name} ({receiver['cookies']}) {amount} cookie(s)!"
-                )
-            else:
-                await ctx.send("failed to give cookies")
-            return
-
-        try:
-            target = await commands.MemberConverter().convert(ctx, args[0])
-        except discord.NotFound:
-            await ctx.send("user not found")
-            return
-
-        if len(args) > 1 and args[1] in ["-g", "--give"]:
-            amount = 1
-            if len(args) > 2:
-                try:
-                    amount = int(args[2])
-                except Exception:
-                    await ctx.send("invalid amount")
-                    return
-
-            if amount <= 0:
-                await ctx.send("amount must be positive")
-                return
-
-            user = self.get_user_data(ctx.author.id)
-            if user["cookies"] < amount:
-                await ctx.send("you dont have enough cookies")
-                return
-
-            success = await self.give_cookie(
-                ctx.author.id, target.id, amount, ctx.guild, ctx.channel
-            )
-
-            if success:
-                giver = self.get_user_data(ctx.author.id)
-                receiver = self.get_user_data(target.id)
-
-                giver["given"] += amount
-                self.save()
-
-                await self.check_give_achievements(
-                    ctx.author.id, ctx.guild, ctx.channel
-                )
-
-                await ctx.send(
-                    f"{ctx.author.name} ({giver['cookies']}) has given {target.name} ({receiver['cookies']}) {amount} cookie(s)!"
-                )
-            else:
-                await ctx.send("failed to give cookies")
-            return
-
-        target_data = self.get_user_data(target.id)
-        msg = f"{target.name} has {target_data['cookies']} cookie(s)"
-        if target_data["cakes"] > 0:
-            msg += f" and {target_data['cakes']} cake(s)"
-        msg += f". give {target.name} a cookie?"
-
-        view = CookieView(ctx.author, target)
-        prompt = await ctx.send(msg, view=view)
-        await view.wait()
-
-        try:
-            await prompt.delete()
-        except Exception:
-            pass
-
-        if view.value is None:
-            await ctx.send("timed out")
-            return
-
-        if not view.value:
-            return
-
-        user = self.get_user_data(ctx.author.id)
-        if user["cookies"] < 1:
-            await ctx.send("you dont have any cookies")
-            return
-
-        success = await self.give_cookie(
-            ctx.author.id, target.id, 1, ctx.guild, ctx.channel
-        )
-
-        if success:
-            giver = self.get_user_data(ctx.author.id)
-            receiver = self.get_user_data(target.id)
-
-            giver["given"] += 1
-            self.save()
-
-            await self.check_give_achievements(ctx.author.id, ctx.guild, ctx.channel)
-
-            await ctx.send(
-                f"{ctx.author.name} ({giver['cookies']}) has given {target.name} ({receiver['cookies']}) a cookie!"
-            )
+def get_cookie_system():
+    global _cookie_system
+    return _cookie_system
 
 
 async def setup(bot):
-    await bot.add_cog(Cookies(bot))
+    cog = Cookies(bot)
+    global _cookie_system
+    _cookie_system = cog
+    await bot.add_cog(cog)

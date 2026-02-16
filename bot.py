@@ -60,6 +60,8 @@ async def load_cogs():
         "src.terminal.shell",
         "src.terminal.connect",
         "src.terminal.fetch",
+        "src.terminal.utils",
+        "src.commands.guides",
         "src.commands.alias",
         "src.commands.help",
         "src.commands.man",

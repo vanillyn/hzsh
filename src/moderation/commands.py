@@ -593,7 +593,7 @@ class ModerationCommands(CogHelper, commands.Cog):
         except discord.HTTPException as e:
             await ctx.send(f"failed to set slowmode: {e}")
 
-    @commands.command(aliases=["warnings", "history", "infractions"])
+    @commands.command(aliases=["warnings", "infractions"])
     async def cases(self, ctx, target: str = None):
         if not is_mod(ctx.author):
             await ctx.send("you lack the required permissions")
